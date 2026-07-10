@@ -1,73 +1,48 @@
+# Настройки чатов
 chats:
   local:
-    enable: true
-    format: '&7[&#F8AE5Bʟ&7] &f%prefix% &#F8AE5B%player% &f%suffix%&#F8AE5B:&f %message%'
-    range: 100
-    cooldown: -1
-    viewing-perms: javachats.local.view
-    sending-perms: javachats.local.send
-    sound: ''
-
+    enable: true # Включение локального чата
+    range: 100 # Радиус локального чата
+    cooldown: -1 # Задержка локального чата (-1 для отключения)
+    viewing-perms: 'javachats.local.view' # Право на чтение
+    sending-perms: 'javachats.local.send' # Право на отправку
+    sound: '' # Звук при отправке
   global:
-    enable: true
-    format: '&7[&#FF8B1Dɢ&7] &f%prefix% &#FF8B1D%player% &f%suffix%&#FF8B1D:&f %message%'
-    range: -1
-    symbol: '!'
-    cooldown: -1
-    viewing-perms: javachats.global.view
-    sending-perms: javachats.global.send
-    sound: ''
+    enable: true # Включение глобального чата
+    range: -1 # Радиус (-1 для бесконечного)
+    symbol: '!' # Символ глобального чата в начале сообщения
+    cooldown: -1 # Задержка глобального чата (-1 для отключения)
+    viewing-perms: 'javachats.global.view' # Право на чтение
+    sending-perms: 'javachats.global.send' # Право на отправку
+    sound: '' # Звук при отправке
 
-messages:
-  reload: '&aПлагин перезагружен!'
-  no-permission: '&cУ вас нет прав.'
-  cooldown: '&cПодождите немного перед отправкой сообщения.'
-  no-player: '&cИгрок не найден.'
-  msg-format-sender: '&7 (&#FF8B1DВы&7) - &7(&#FF8B1D%player%&7) &f- &7%message%'
-  msg-format-receiver: '&7 (&#FF8B1D%player%&7) - &7(&#FF8B1DВы&7) &f- &7%message%'
-  msg-hover: '&7Нажмите что бы написать &#FF8B1Dличные &7сообщения'
-  anti-caps-title: '&cНе капси'
-  discord-tech:
-    - '&cВ канале техническое уведомление'
-  discord-new:
-    - '&aВ канале сообщение новое'
-
+# Настройки пинга в чате
 ping-chat:
-  enabled: true
-  highlight:
-    target: '&9'
-    others: '&7'
+  enabled: true # Включить пинг игроков
   title:
-    text: '&9Вас пинганули в чате'
-    sub-text: ''
-    fade-in: 10
-    stay: 70
-    fade-out: 20
+    fade-in: 10 # Время появления титра в тиках
+    stay: 70 # Время отображения титра
+    fade-out: 20 # Время исчезновения титра
   sound:
-    enable: true
-    name: 'BLOCK_NOTE_BLOCK_GUITAR'
-    volume: 0.7
-    pitch: 2.0
-    category: 'MASTER'
+    enable: true # Включить звук пинга
+    name: 'BLOCK_NOTE_BLOCK_GUITAR' # Название звука
+    volume: 0.7 # Громкость
+    pitch: 2.0 # Тональность
+    category: 'MASTER' # Категория звука
 
-join-quit-messages:
+# Оповещения о входе/выходе
+join-quit:
   join:
-    enable: true
-    messages:
-      - '&7[&a+&7] &a%player% &7залетел на сервер!'
-      - '&7[&a+&7] &7Приветствуем &a%player%&7!'
-      - '&7[&a+&7] &a%player% &7теперь с нами.'
-      - '&7[&a+&7] &7К нам присоединился &a%player%&7.'
-      - '&7[&a+&7] &a%player% &7ворвался в чат!'
+    enable: true # Оповещение о входе
   quit:
-    enable: true
-    messages:
-      - '&7[&c-&7] &c%player% &7покинул нас.'
-      - '&7[&c-&7] &c%player% &7вышел с сервера.'
-      - '&7[&c-&7] &7Пока, &c%player%&7!'
-      - '&7[&c-&7] &c%player% &7отключился.'
-      - '&7[&c-&7] &7Мы будем скучать по &c%player%&7.'
+    enable: true # Оповещение о выходе
 
+# Настройки анти-капса
 settings:
-  anti-caps-percent: 75
-  anti-caps-min-length: 4
+  anti-caps-percent: 75 # Процент капса в сообщении
+  anti-caps-min-length: 4 # Минимальная длина сообщения для проверки
+
+# Интеграция с Discord
+discord:
+  tech-role: '1391468653052035251' # ID технической роли Discord
+  debug: true # Отладка интеграции с Discord

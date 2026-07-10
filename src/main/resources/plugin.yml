@@ -1,7 +1,7 @@
 name: JavaChats
 version: 1.0
-main: ru.javaroot.javachats.JavaChats
-api-version: 1.21
+main: ru.javaroot.javachats.ChatPlugin
+api-version: '26.1'
 authors: [JavaRoot]
 softdepend: [DiscordSRV]
 
