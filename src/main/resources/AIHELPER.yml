@@ -1,0 +1,24 @@
+rules:
+  flood:
+    description: "Флуд в чате от 2-ух сообщений (исключение: spec)."
+    punish-command: "mute %player% 60m Флуд в чате (AI: %probability%)"
+
+  insult:
+    description: "Оскорбление, унижение в сторону игрока."
+    punish-command: "mute %player% 60m Оскорбление игроков (AI: %probability%)"
+
+  inadequate_chat:
+    description: "Неадекватное поведение в чате."
+    punish-command: "mute %player% 60m Неадекватное поведение (AI: %probability%)"
+
+  inadequate_admin:
+    description: "Неадекватное общение с Администрацией Сервера."
+    punish-command: "mute %player% 240m Неадекватное общение с Администрацией (AI: %probability%)"
+
+  inadequate_moder:
+    description: "Неадекватное общение с Модерацией."
+    punish-command: "mute %player% 120m Неадекватное общение с Модерацией (AI: %probability%)"
+
+  relatives:
+    description: "Оскорбление родителей."
+    punish-command: "mute %player% 120m Оскорбление родителей (AI: %probability%)"

@@ -1,73 +1,92 @@
+# чаты
 chats:
   local:
-    enable: true
-    format: '&7[&#F8AE5Bʟ&7] &f%prefix% &#F8AE5B%player% &f%suffix%&#F8AE5B:&f %message%'
-    range: 100
-    cooldown: -1
-    viewing-perms: javachats.local.view
-    sending-perms: javachats.local.send
-    sound: ''
-
+    enable: true # локальный чат
+    range: 100 # радиус
+    cooldown: -1 # задержка (-1 выкл)
+    viewing-perms: 'javachats.local.view' # права на просмотр
+    sending-perms: 'javachats.local.send' # права на отправку
+    sound: '' # звук
   global:
-    enable: true
-    format: '&7[&#FF8B1Dɢ&7] &f%prefix% &#FF8B1D%player% &f%suffix%&#FF8B1D:&f %message%'
-    range: -1
-    symbol: '!'
-    cooldown: -1
-    viewing-perms: javachats.global.view
-    sending-perms: javachats.global.send
-    sound: ''
+    enable: true # глобальный чат
+    range: -1 # радиус (-1 безлимит)
+    symbol: '!' # символ глобала
+    cooldown: -1 # задержка (-1 выкл)
+    viewing-perms: 'javachats.global.view' # права на просмотр
+    sending-perms: 'javachats.global.send' # права на отправку
+    sound: '' # звук
 
-messages:
-  reload: '&aПлагин перезагружен!'
-  no-permission: '&cУ вас нет прав.'
-  cooldown: '&cПодождите немного перед отправкой сообщения.'
-  no-player: '&cИгрок не найден.'
-  msg-format-sender: '&7 (&#FF8B1DВы&7) - &7(&#FF8B1D%player%&7) &f- &7%message%'
-  msg-format-receiver: '&7 (&#FF8B1D%player%&7) - &7(&#FF8B1DВы&7) &f- &7%message%'
-  msg-hover: '&7Нажмите что бы написать &#FF8B1Dличные &7сообщения'
-  anti-caps-title: '&cНе капси'
-  discord-tech:
-    - '&cВ канале техническое уведомление'
-  discord-new:
-    - '&aВ канале сообщение новое'
-
+# пинг
 ping-chat:
-  enabled: true
-  highlight:
-    target: '&9'
-    others: '&7'
+  enabled: true # пинг игроков
   title:
-    text: '&9Вас пинганули в чате'
-    sub-text: ''
-    fade-in: 10
-    stay: 70
-    fade-out: 20
+    fade-in: 10 # появление тиков
+    stay: 70 # показ тиков
+    fade-out: 20 # исчезновение тиков
   sound:
-    enable: true
-    name: 'BLOCK_NOTE_BLOCK_GUITAR'
-    volume: 0.7
-    pitch: 2.0
-    category: 'MASTER'
+    enable: true # звук
+    name: 'BLOCK_NOTE_BLOCK_GUITAR' # название звука
+    volume: 0.7 # громкость
+    pitch: 2.0 # высота
+    category: 'MASTER' # категория
 
-join-quit-messages:
+# вход/выход
+join-quit:
   join:
-    enable: true
-    messages:
-      - '&7[&a+&7] &a%player% &7залетел на сервер!'
-      - '&7[&a+&7] &7Приветствуем &a%player%&7!'
-      - '&7[&a+&7] &a%player% &7теперь с нами.'
-      - '&7[&a+&7] &7К нам присоединился &a%player%&7.'
-      - '&7[&a+&7] &a%player% &7ворвался в чат!'
+    enable: true # вход
   quit:
-    enable: true
-    messages:
-      - '&7[&c-&7] &c%player% &7покинул нас.'
-      - '&7[&c-&7] &c%player% &7вышел с сервера.'
-      - '&7[&c-&7] &7Пока, &c%player%&7!'
-      - '&7[&c-&7] &c%player% &7отключился.'
-      - '&7[&c-&7] &7Мы будем скучать по &c%player%&7.'
+    enable: true # выход
 
+# антикапс
 settings:
-  anti-caps-percent: 75
-  anti-caps-min-length: 4
+  anti-caps-percent: 75 # процент капса
+  anti-caps-min-length: 4 # мин длина сообщения
+
+# антиспам
+anti-spam:
+  enable: true # антиспам
+  delay-ms: 1000 # задержка мс
+
+# антиповтор
+anti-repeat:
+  enable: true # вкл/выкл
+
+# ИИ хелпер
+ai-helper:
+  system-prompt: | # промпт, я его через ИИ прогнал что бы другой ИИ понимал больше xD ))))
+    Ты профессиональный модератор русскоязычного Minecraft-сервера с продвинутой системой распознавания обходов и скрытого мата/оскорблений.
+    Твоя задача — анализировать сообщения игроков на соответствие правилам сервера:
+    %rules%
+
+    Критически важно распознавать любые обходы фильтрации, включая:
+    1. Замену букв на похожие латинские символы, цифры или спецсимволы (например: 'u' или 'uu' вместо 'и', '0' или 'O' вместо 'о', 'n' вместо 'п', 'a' вместо 'а', '@' вместо 'а', 'La' вместо 'ла' и т.д.). Пример: "PUДрuuLaa" (это завуалированное "пидрила"), "nидop" (это "пидор"), "мaть шлюxа" с латинскими буквами.
+    2. Использование смеси русских и латинских букв в пределах одного слова (mixed alphabets / homoglyphs).
+    3. Написание слов с пробелами между буквами или другими символами (например: "п и д о р", "п.и.д.о.р", "пі Д ОOOr").
+    4. Удвоение или растягивание букв (например: "пидооорааас", "пиидрилаа").
+    5. Транслитерацию русских матов латиницей (например: "pidor", "blyat", "shluha").
+
+    Если ты обнаружил хотя бы малейший намек на завуалированное или прямое нарушение правил (мат, оскорбления, оскорбления родных и т.д.), ты ДОЛЖЕН:
+    - Установить "violation": true
+    - Определить вероятность "probability" (если это явный обход мата, вероятность должна быть близка к 1.0, например 0.95-1.0)
+    - Добавить это слово или фразу в том виде, в каком её написал игрок (со всеми обходами, пробелами, неверными буквами) в список "bad_words". Пример: если игрок написал "ты PUДрuuLaa", то в "bad_words" должно быть ["PUДрuuLaa"].
+
+    %examples_plus%
+    %examples_minus%
+    Ответь строго в формате JSON: {"violation": true/false, "rule": "id", "probability": 0.0-1.0, "bad_words": ["оригинальное_слово_с_обходом"]}
+  user-prompt-format: 'Сообщение: %message%' # запрос
+  mistral-api:
+    enable: true # mistral
+    api-key: 'Mghc7gdF2CL454aXAQewRhQgnoO99hDj' # api mistral, это для моих тестов
+    #рекомендую заменить для конфиденциальность
+    cooldown: 4 # kd
+    all-logs: true # logs
+    mode: censor # block / censor
+    punish-probability: 0.85 # вероятность
+  groq-api: #чесна бля не тестил даже
+    enable: false # groq
+    api-key: '' # api groq
+    model: 'llama-3.1-8b-instant' # model groq
+    cooldown: 4 # kd
+    all-logs: true # logs
+    mode: censor # block / censor
+    punish-probability: 0.85 # вероятность
