@@ -1,37 +1,31 @@
 name: JavaChats
 version: 1.0
-main: ru.javaroot.javachats.JavaChats
-api-version: 1.21
+main: ru.javaroot.javachats.JavaChat
+api-version: '1.21'
 authors: [JavaRoot]
-softdepend: [DiscordSRV]
 
 commands:
   javachats:
-    description: Основная команда для JavaChats
     permission: javachats.admin
     usage: /javachats reload
   msg:
-    description: Отправить личное сообщение игроку
     aliases: [tell, w]
     permission: javachats.msg
     usage: /msg <игрок> <сообщение>
+  aihelper:
+    permission: javachats.admin
+    usage: /aihelper add <plus|minus> <сообщение>
 
 permissions:
   javachats.admin:
-    description: Права администратора для перезагрузки конфига
     default: op
   javachats.local.view:
-    description: Права на просмотр локального чата
     default: true
   javachats.local.send:
-    description: Права на отправку сообщений в локальный чат
     default: true
   javachats.global.view:
-    description: Права на просмотр глобального чата
     default: true
   javachats.global.send:
-    description: Права на отправку сообщений в глобальный чат
     default: true
   javachats.msg:
-    description: Права на использование личных сообщений
     default: true
