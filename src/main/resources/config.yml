@@ -76,7 +76,7 @@ ai-helper:
   user-prompt-format: 'Сообщение: %message%' # запрос
   mistral-api:
     enable: true # mistral
-    api-key: 'Mghc7gdF2CL454aXAQewRhQgnoO99hDj' # api mistral, это для моих тестов
+    api-key: '' # api mistral, это для моих тестов
     #рекомендую заменить для конфиденциальность
     cooldown: 4 # kd
     all-logs: true # logs
