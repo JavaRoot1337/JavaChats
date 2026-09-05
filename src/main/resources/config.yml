@@ -76,14 +76,15 @@ ai-helper:
     initial-delay-ticks: 20 # запуск
     max-queue-size: 50 # очередь
   mistral-api:
-    enable: true # сервис
-    api-key: '' # ключ
+    enable: true # сервис / mistral
+    api-key: '' # api mistral, оставить пустым ради конфиденциальности
     endpoint: 'https://api.mistral.ai/v1/chat/completions' # адрес
     model: 'mistral-large-latest' # модель
     timeout-seconds: 10 # таймаут
-    cooldown: 4 # задержка
-    all-logs: true # все логи
-    mode: censor # режим
+    cooldown: 4 # kd
+    all-logs: true # logs
+    mode: censor # block / censor
+
     punish-probability: 0.85 # вероятность
 
   groq-api:
