@@ -1,57 +1,56 @@
 package ru.javaroot.javachats.listener;
 
-import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import ru.javaroot.javachats.JavaChat;
+import ru.javaroot.JavaChat;
 import ru.javaroot.javachats.utils.TextUtil;
 
 import java.util.List;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class ConnectionList implements Listener {
     private final JavaChat plugin;
-    private final Random rand = new Random();
+    private final ChatList chatList;
 
-    public ConnectionList(JavaChat plugin) {
+    public ConnectionList(JavaChat plugin, ChatList chatList) {
         this.plugin = plugin;
+        this.chatList = chatList;
     }
 
     @EventHandler
     public void onJoin(PlayerJoinEvent e) {
-        var cfg = plugin.getConfig();
-        if (!cfg.getBoolean("join-quit.join.enable")) {
+        if (!plugin.getRuntimeConfig().joinQuit().joinEnabled()) {
             e.joinMessage(null);
             return;
         }
 
-        List<String> messages = plugin.getMessageConfig().getStringList("join-quit.join");
+        List<String> messages = plugin.getMessageSnapshot().list("join-quit.join");
         if (messages.isEmpty()) {
             e.joinMessage(null);
             return;
         }
 
-        String msg = messages.get(rand.nextInt(messages.size())).replace("%player%", e.getPlayer().getName());
+        String msg = messages.get(ThreadLocalRandom.current().nextInt(messages.size()))
+                .replace("%player%", e.getPlayer().getName());
         e.joinMessage(TextUtil.format(msg));
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
-        var cfg = plugin.getConfig();
-        if (!cfg.getBoolean("join-quit.quit.enable")) {
+        if (!plugin.getRuntimeConfig().joinQuit().quitEnabled()) {
             e.quitMessage(null);
-            return;
+        } else {
+            List<String> messages = plugin.getMessageSnapshot().list("join-quit.quit");
+            if (messages.isEmpty()) {
+                e.quitMessage(null);
+            } else {
+                String msg = messages.get(ThreadLocalRandom.current().nextInt(messages.size()))
+                        .replace("%player%", e.getPlayer().getName());
+                e.quitMessage(TextUtil.format(msg));
+            }
         }
-
-        List<String> messages = plugin.getMessageConfig().getStringList("join-quit.quit");
-        if (messages.isEmpty()) {
-            e.quitMessage(null);
-            return;
-        }
-
-        String msg = messages.get(rand.nextInt(messages.size())).replace("%player%", e.getPlayer().getName());
-        e.quitMessage(TextUtil.format(msg));
+        chatList.cleanPlayerData(e.getPlayer().getUniqueId());
     }
 }

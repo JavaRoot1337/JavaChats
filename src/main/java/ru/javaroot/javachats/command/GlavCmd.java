@@ -3,7 +3,7 @@ package ru.javaroot.javachats.command;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-import ru.javaroot.javachats.JavaChat;
+import ru.javaroot.JavaChat;
 import ru.javaroot.javachats.utils.TextUtil;
 
 public class GlavCmd implements CommandExecutor {
@@ -14,21 +14,19 @@ public class GlavCmd implements CommandExecutor {
     }
 
     @Override
-    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("javachats.admin")) {
-            sender.sendMessage(
-                    TextUtil.format(plugin.getMessageConfig().getString("messages.no-permission", "&cНет прав.")));
+            sender.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text("messages.no-permission")));
             return true;
         }
 
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             plugin.reloadConfigs();
-            sender.sendMessage(TextUtil.format(
-                    plugin.getMessageConfig().getString("messages.reload", "&aКонфиги успешно перезагружены!")));
+            sender.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text("messages.reload")));
             return true;
         }
 
-        sender.sendMessage(TextUtil.format(plugin.getMessageConfig().getString("messages.usage-javachats", "&7Использование: &a/javachats reload")));
+        sender.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text("messages.usage-javachats")));
         return true;
     }
 }

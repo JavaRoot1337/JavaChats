@@ -3,31 +3,44 @@ package ru.javaroot.javachats.aihelper;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.plugin.Plugin;
+import ru.javaroot.JavaChat;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class AiRules {
-    private final Plugin plugin;
+    private final JavaChat plugin;
     private final Map<String, RuleInfo> rules = new HashMap<>();
     private final List<String> trainingPlus = new ArrayList<>();
     private final List<String> trainingMinus = new ArrayList<>();
+    private String systemPrompt;
 
-    public AiRules(Plugin plugin) {
+    public AiRules(JavaChat plugin) {
         this.plugin = plugin;
-        load();
     }
 
-    public void load() {
+    public synchronized void load() {
+        load(null);
+    }
+
+    public synchronized void load(String fallbackPrompt) {
+        File promptFile = new File(plugin.getDataFolder(), "AIRULES.yml");
+        boolean promptFileExists = promptFile.exists();
+        if (!promptFile.exists()) {
+            plugin.saveResource("AIRULES.yml", false);
+        }
+
+        FileConfiguration promptConfig = YamlConfiguration.loadConfiguration(promptFile);
+        systemPrompt = resolveSystemPrompt(promptFileExists, promptConfig.getString("system-prompt"), fallbackPrompt);
+
         File file = new File(plugin.getDataFolder(), "AIHELPER.yml");
         if (!file.exists()) {
             plugin.saveResource("AIHELPER.yml", false);
@@ -35,72 +48,67 @@ public class AiRules {
 
         FileConfiguration config = YamlConfiguration.loadConfiguration(file);
         rules.clear();
-
-        ConfigurationSection sec = config.getConfigurationSection("rules");
-        if (sec != null) {
-            for (String key : sec.getKeys(false)) {
-                String desc = sec.getString(key + ".description", "");
-                String cmd = sec.getString(key + ".punish-command", "");
-                rules.put(key, new RuleInfo(key, desc, cmd));
+        ConfigurationSection section = config.getConfigurationSection("rules");
+        if (section != null) {
+            for (String key : section.getKeys(false)) {
+                String description = section.getString(key + ".description");
+                if (description == null || description.isEmpty()) {
+                    plugin.getLogs().warning("ai-rule-description", Map.of("rule", key));
+                    continue;
+                }
+                rules.put(key, new RuleInfo(key, description, section.getString(key + ".punish-command")));
             }
         }
-
         loadTrainingData();
     }
 
     private void loadTrainingData() {
         trainingPlus.clear();
         trainingMinus.clear();
-
         trainingPlus.addAll(loadTrainingFile("learning/trainingplus.txt"));
         trainingMinus.addAll(loadTrainingFile("learning/trainingminus.txt"));
     }
 
     private List<String> loadTrainingFile(String fileName) {
-        File file = new File(plugin.getDataFolder(), fileName);
-        File parent = file.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
-        }
-
-        if (!file.exists()) {
-            try {
-                file.createNewFile();
-            } catch (IOException e) {
-                plugin.getLogger().warning("Could not create " + fileName + ": " + e.getMessage());
-            }
-            return new ArrayList<>();
-        }
+        Path path = new File(plugin.getDataFolder(), fileName).toPath();
         try {
-            return Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
+            Files.createDirectories(path.getParent());
+            if (Files.notExists(path)) {
+                Files.createFile(path);
+                return List.of();
+            }
+            return Files.readAllLines(path, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            plugin.getLogger().warning("Could not read " + fileName + ": " + e.getMessage());
-            return new ArrayList<>();
+            plugin.getLogs().warning("ai-training-read", Map.of(
+                    "file", fileName,
+                    "error", String.valueOf(e.getMessage())));
+            return List.of();
         }
     }
 
     public synchronized boolean addTrainingMessage(boolean plus, String message) {
-        String cleanedMsg = message.trim();
-        List<String> currentList = plus ? trainingPlus : trainingMinus;
+        String cleaned = message.trim();
+        if (cleaned.isEmpty()) {
+            return false;
+        }
 
-        for (String s : currentList) {
-            if (s.trim().equalsIgnoreCase(cleanedMsg)) {
+        List<String> current = plus ? trainingPlus : trainingMinus;
+        for (String line : current) {
+            if (line.trim().equalsIgnoreCase(cleaned)) {
                 return false;
             }
         }
 
         String fileName = plus ? "learning/trainingplus.txt" : "learning/trainingminus.txt";
-        File file = new File(plugin.getDataFolder(), fileName);
-        File parent = file.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
-        }
-
-        try (FileWriter fw = new FileWriter(file, true);
-                PrintWriter pw = new PrintWriter(fw)) {
-            pw.println(cleanedMsg);
+        Path path = new File(plugin.getDataFolder(), fileName).toPath();
+        try {
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, cleaned + System.lineSeparator(), StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
-            plugin.getLogger().warning("Could not write to " + fileName + ": " + e.getMessage());
+            plugin.getLogs().warning("ai-training-write", Map.of(
+                    "file", fileName,
+                    "error", String.valueOf(e.getMessage())));
             return false;
         }
 
@@ -108,16 +116,31 @@ public class AiRules {
         return true;
     }
 
-    public Map<String, RuleInfo> getRules() {
-        return rules;
+    public synchronized Map<String, RuleInfo> getRules() {
+        return Map.copyOf(rules);
     }
 
-    public List<String> getTrainingPlus() {
-        return trainingPlus;
+    public synchronized List<String> getTrainingPlus() {
+        return List.copyOf(trainingPlus);
     }
 
-    public List<String> getTrainingMinus() {
-        return trainingMinus;
+    public synchronized List<String> getTrainingMinus() {
+        return List.copyOf(trainingMinus);
+    }
+
+    public synchronized String getSystemPrompt() {
+        return systemPrompt;
+    }
+
+    static String resolveSystemPrompt(boolean promptFileExists, String configuredPrompt, String fallbackPrompt) {
+        String loadedPrompt = configuredPrompt == null || configuredPrompt.isBlank() ? null : configuredPrompt;
+        if (promptFileExists && loadedPrompt != null) {
+            return loadedPrompt;
+        }
+        if (fallbackPrompt != null && !fallbackPrompt.isBlank()) {
+            return fallbackPrompt;
+        }
+        return loadedPrompt;
     }
 
     public static class RuleInfo {

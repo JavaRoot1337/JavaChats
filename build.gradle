@@ -1,0 +1,64 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'ru.javaroot'
+version = '1.0'
+
+repositories {
+    maven {
+        name = 'papermc'
+        url = uri('https://repo.papermc.io/repository/maven-public/')
+    }
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    withSourcesJar()
+}
+
+dependencies {
+    compileOnly 'io.papermc.paper:paper-api:26.2.build.121-stable'
+    compileOnly 'net.luckperms:api:5.4'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation 'io.papermc.paper:paper-api:26.2.build.121-stable'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-Xlint:all']
+}
+
+tasks.withType(ProcessResources).configureEach {
+    filteringCharset = 'UTF-8'
+}
+
+tasks.test {
+    useJUnitPlatform {
+        excludeTags 'integration'
+    }
+}
+
+tasks.register('integrationTest', Test) {
+    description = 'Runs resource and configuration integration tests.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'integration'
+    }
+}
+
+tasks.check {
+    dependsOn tasks.integrationTest
+}
+
+tasks.jar {
+    archiveBaseName = 'JavaChats'
+}

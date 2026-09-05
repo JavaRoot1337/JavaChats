@@ -1,339 +1,398 @@
 package ru.javaroot.javachats.aihelper;
 
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitTask;
-import ru.javaroot.javachats.JavaChat;
+import ru.javaroot.JavaChat;
+import ru.javaroot.javachats.api.ModerationResult;
+import ru.javaroot.javachats.api.ModerationService;
+import ru.javaroot.javachats.config.RuntimeConfig;
+import ru.javaroot.javachats.runtime.ServerScheduler;
 import ru.javaroot.javachats.utils.TextUtil;
 
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-public class AiMod {
+public class AiMod implements ModerationService {
     private final JavaChat plugin;
     private final AiRules rules;
+    private final ServerScheduler scheduler;
+    private final Queue<PendingMessage> queue = new ConcurrentLinkedQueue<>();
+    private final AtomicLong lastCheckMistral = new AtomicLong();
+    private final AtomicLong lastCheckGroq = new AtomicLong();
+    private volatile RuntimeConfig.Ai aiConfig;
     private MistralApi mistralApi;
     private GroqApi groqApi;
-
-    private final Queue<PendingMessage> queue = new ConcurrentLinkedQueue<>();
-    private BukkitTask processTask;
-    private long lastCheckMistral = 0;
-    private long lastCheckGroq = 0;
+    private ScheduledTask processTask;
 
     public AiMod(JavaChat plugin) {
+        this(plugin, new ServerScheduler(plugin));
+    }
+
+    public AiMod(JavaChat plugin, ServerScheduler scheduler) {
         this.plugin = plugin;
         this.rules = new AiRules(plugin);
-        reload();
+        this.scheduler = scheduler;
     }
 
     public void reload() {
-        rules.load();
+        close();
+        RuntimeConfig.Ai config = plugin.getRuntimeConfig().ai();
+        rules.load(config.systemPrompt());
+        aiConfig = config;
 
-        boolean mistralEnabled = plugin.getConfig().getBoolean("ai-helper.mistral-api.enable", false);
-        String mistralKey = plugin.getConfig().getString("ai-helper.mistral-api.api-key", "");
-        mistralApi = (mistralEnabled && !mistralKey.isEmpty()) ? new MistralApi(plugin, mistralKey) : null;
-
-        boolean groqEnabled = plugin.getConfig().getBoolean("ai-helper.groq-api.enable", false);
-        String groqKey = plugin.getConfig().getString("ai-helper.groq-api.api-key", "");
-        String groqModel = plugin.getConfig().getString("ai-helper.groq-api.model", "llama-3.1-8b-instant");
-        groqApi = (groqEnabled && !groqKey.isEmpty()) ? new GroqApi(plugin, groqKey, groqModel) : null;
-
-        if (processTask != null) {
-            processTask.cancel();
-            processTask = null;
+        RuntimeConfig.Provider mistral = aiConfig.mistral();
+        String mistralKey = plugin.getConfig().getString("ai-helper.mistral-api.api-key");
+        if (isConfigured(mistral, mistralKey)) {
+            mistralApi = createMistral(mistral, mistralKey);
         }
 
-        queue.clear();
+        RuntimeConfig.Provider groq = aiConfig.groq();
+        String groqKey = plugin.getConfig().getString("ai-helper.groq-api.api-key");
+        if (isConfigured(groq, groqKey)) {
+            groqApi = createGroq(groq, groqKey);
+        }
 
-        boolean anyBlockMode = (mistralApi != null
-                && "block".equalsIgnoreCase(plugin.getConfig().getString("ai-helper.mistral-api.mode", "block")))
-                || (groqApi != null
-                        && "block".equalsIgnoreCase(plugin.getConfig().getString("ai-helper.groq-api.mode", "block")));
-
-        if (anyBlockMode) {
-            long cooldownSecs = 4;
-            if (mistralApi != null
-                    && "block".equalsIgnoreCase(plugin.getConfig().getString("ai-helper.mistral-api.mode", "block"))) {
-                cooldownSecs = Math.min(cooldownSecs, plugin.getConfig().getLong("ai-helper.mistral-api.cooldown", 4));
-            }
-            if (groqApi != null
-                    && "block".equalsIgnoreCase(plugin.getConfig().getString("ai-helper.groq-api.mode", "block"))) {
-                cooldownSecs = Math.min(cooldownSecs, plugin.getConfig().getLong("ai-helper.groq-api.cooldown", 4));
-            }
-            processTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::processNext, 20L,
-                    cooldownSecs * 20L);
+        long periodSeconds = Long.MAX_VALUE;
+        if (isBlock(mistral, mistralApi != null)) {
+            periodSeconds = Math.min(periodSeconds, mistral.cooldownSeconds());
+        }
+        if (isBlock(groq, groqApi != null)) {
+            periodSeconds = Math.min(periodSeconds, groq.cooldownSeconds());
+        }
+        if (periodSeconds > 0 && periodSeconds != Long.MAX_VALUE) {
+            processTask = scheduler.runAsyncRepeating(this::processNext,
+                    aiConfig.blockInitialDelayTicks() * 50L, periodSeconds, TimeUnit.SECONDS);
         }
     }
 
-    public void handleMsg(Player p, String msg) {
-        boolean mistralBlock = plugin.getConfig().getBoolean("ai-helper.mistral-api.enable", false)
-                && "block".equalsIgnoreCase(plugin.getConfig().getString("ai-helper.mistral-api.mode", "block"))
-                && mistralApi != null;
-
-        boolean groqBlock = plugin.getConfig().getBoolean("ai-helper.groq-api.enable", false)
-                && "block".equalsIgnoreCase(plugin.getConfig().getString("ai-helper.groq-api.mode", "block"))
-                && groqApi != null;
-
-        if (!mistralBlock && !groqBlock)
-            return;
-
-        if (queue.size() > 50)
-            return;
-        queue.add(new PendingMessage(p.getName(), msg));
-    }
-
-    public String censorIfViolation(Player p, String msg) {
-        long now = System.currentTimeMillis();
-
-        boolean mistralEnabled = plugin.getConfig().getBoolean("ai-helper.mistral-api.enable", false);
-        String mistralMode = plugin.getConfig().getString("ai-helper.mistral-api.mode", "censor");
-        boolean useMistral = mistralEnabled && "censor".equalsIgnoreCase(mistralMode) && (mistralApi != null);
-        long mistralCooldownMs = plugin.getConfig().getLong("ai-helper.mistral-api.cooldown", 4) * 1000L;
-
-        boolean groqEnabled = plugin.getConfig().getBoolean("ai-helper.groq-api.enable", false);
-        String groqMode = plugin.getConfig().getString("ai-helper.groq-api.mode", "censor");
-        boolean useGroq = groqEnabled && "censor".equalsIgnoreCase(groqMode) && (groqApi != null);
-        long groqCooldownMs = plugin.getConfig().getLong("ai-helper.groq-api.cooldown", 4) * 1000L;
-
-        if (useMistral && (now - lastCheckMistral < mistralCooldownMs)) {
-            useMistral = false;
-        }
-        if (useGroq && (now - lastCheckGroq < groqCooldownMs)) {
-            useGroq = false;
-        }
-
-        if (!useMistral && !useGroq) {
+    private MistralApi createMistral(RuntimeConfig.Provider provider, String key) {
+        try {
+            return new MistralApi(plugin, provider, key);
+        } catch (RuntimeException ex) {
+            plugin.getLogs().warning("mistral-config", Map.of("error", String.valueOf(ex.getMessage())));
             return null;
         }
+    }
 
-        if (useMistral)
-            lastCheckMistral = now;
-        if (useGroq)
-            lastCheckGroq = now;
-
+    private GroqApi createGroq(RuntimeConfig.Provider provider, String key) {
         try {
-            List<String> plus = rules.getTrainingPlus();
-            List<String> minus = rules.getTrainingMinus();
+            return new GroqApi(plugin, provider, key);
+        } catch (RuntimeException ex) {
+            plugin.getLogs().warning("groq-config", Map.of("error", String.valueOf(ex.getMessage())));
+            return null;
+        }
+    }
 
-            CompletableFuture<MistralApi.AiResult> mistralFuture = useMistral
-                    ? mistralApi.checkMsg(msg, rules.getRules(), plus, minus)
-                    : CompletableFuture.completedFuture(null);
+    public void handleMsg(String playerName, String msg) {
+        RuntimeConfig.Ai cfg = aiConfig;
+        if (cfg == null || (!isBlock(cfg.mistral(), mistralApi != null) && !isBlock(cfg.groq(), groqApi != null))) {
+            return;
+        }
+        if (queue.size() >= cfg.blockMaxQueueSize()) {
+            return;
+        }
+        queue.add(new PendingMessage(playerName, msg));
+    }
 
-            CompletableFuture<GroqApi.AiResult> groqFuture = useGroq
-                    ? groqApi.checkMsg(msg, rules.getRules(), plus, minus)
-                    : CompletableFuture.completedFuture(null);
-
-            CompletableFuture.allOf(mistralFuture, groqFuture).get(5, TimeUnit.SECONDS);
-
-            MistralApi.AiResult mRes = mistralFuture.join();
-            GroqApi.AiResult gRes = groqFuture.join();
-
-            String censored = msg;
-            boolean violation = false;
-
-            if (mRes != null) {
-                double threshold = plugin.getConfig().getDouble("ai-helper.mistral-api.punish-probability", 0.85);
-                if (mRes.violation && mRes.probability >= threshold) {
-                    violation = true;
-                    if (mRes.bad_words != null && !mRes.bad_words.isEmpty()) {
-                        for (String bw : mRes.bad_words) {
-                            censored = replaceCaseInsensitive(censored, bw);
-                        }
-                    } else {
-                        censored = censorMessage(censored);
-                    }
-                }
-            }
-
-            if (gRes != null) {
-                double threshold = plugin.getConfig().getDouble("ai-helper.groq-api.punish-probability", 0.85);
-                if (gRes.violation && gRes.probability >= threshold) {
-                    violation = true;
-                    if (gRes.bad_words != null && !gRes.bad_words.isEmpty()) {
-                        for (String bw : gRes.bad_words) {
-                            censored = replaceCaseInsensitive(censored, bw);
-                        }
-                    } else {
-                        censored = censorMessage(censored);
-                    }
-                }
-            }
-
-            if (violation) {
-                String subtitleText = plugin.getMessageConfig().getString("ai-helper.subtitle",
-                        "&cНе нарушайте правила сервера!");
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (p.isOnline()) {
-                        p.showTitle(Title.title(Component.empty(), TextUtil.format(subtitleText)));
-                    }
-                });
-                return censored;
-            }
-        } catch (Exception e) {
-            plugin.getLogger().warning("Ошибка при цензурировании сообщения ИИ: " + e.getMessage());
+    @Override
+    public CompletableFuture<ModerationResult> moderate(UUID playerId, String msg) {
+        RuntimeConfig.Ai cfg = aiConfig;
+        if (cfg == null) {
+            return CompletableFuture.completedFuture(ModerationResult.clean());
         }
 
-        return null;
+        boolean useMistral = isCensor(cfg.mistral(), mistralApi != null)
+                && claimCheck(lastCheckMistral, cfg.mistral().cooldownSeconds());
+        boolean useGroq = isCensor(cfg.groq(), groqApi != null)
+                && claimCheck(lastCheckGroq, cfg.groq().cooldownSeconds());
+        if (!useMistral && !useGroq) {
+            return CompletableFuture.completedFuture(ModerationResult.clean());
+        }
+
+        List<String> plus = rules.getTrainingPlus();
+        List<String> minus = rules.getTrainingMinus();
+        String systemPrompt = rules.getSystemPrompt();
+        CompletableFuture<MistralApi.AiResult> mistral = useMistral
+                ? mistralApi.checkMsg(msg, rules.getRules(), plus, minus, cfg, systemPrompt)
+                : CompletableFuture.completedFuture(null);
+        CompletableFuture<GroqApi.AiResult> groq = useGroq
+                ? groqApi.checkMsg(msg, rules.getRules(), plus, minus, cfg, systemPrompt)
+                : CompletableFuture.completedFuture(null);
+
+        return CompletableFuture.allOf(mistral, groq)
+                .orTimeout(Math.max(cfg.censorTimeoutSeconds(), 0L), TimeUnit.SECONDS)
+                .thenApply(ignored -> combineModeration(playerId, msg, mistral.join(), groq.join(), cfg))
+                .exceptionally(error -> {
+                    plugin.getLogs().warning("moderation-request", Map.of("error", rootMessage(error)));
+                    return ModerationResult.clean();
+                });
+    }
+
+    public CompletableFuture<String> censorIfViolation(UUID uuid, String msg) {
+        return moderate(uuid, msg).thenApply(result -> result.censoredMessage().orElse(null));
+    }
+
+    private ModerationResult combineModeration(UUID playerId, String msg, MistralApi.AiResult mistral,
+            GroqApi.AiResult groq, RuntimeConfig.Ai cfg) {
+        String censored = msg;
+        String rule = null;
+        double probability = 0.0;
+        boolean violation = false;
+        List<String> badWords = new ArrayList<>();
+        if (isPunished(mistral, cfg.mistral().punishProbability())) {
+            violation = true;
+            rule = mistral.rule;
+            probability = Math.max(probability, mistral.probability);
+            if (mistral.bad_words != null) {
+                badWords.addAll(mistral.bad_words);
+            }
+            censored = censorResult(censored, mistral.bad_words);
+        }
+        if (isPunished(groq, cfg.groq().punishProbability())) {
+            violation = true;
+            rule = groq.rule;
+            probability = Math.max(probability, groq.probability);
+            if (groq.bad_words != null) {
+                badWords.addAll(groq.bad_words);
+            }
+            censored = censorResult(censored, groq.bad_words);
+        }
+        if (violation) {
+            showCensorTitle(playerId, cfg.censorTitle());
+            return new ModerationResult(true, probability, rule, badWords, censored);
+        }
+        return ModerationResult.clean();
+    }
+
+    private boolean claimCheck(AtomicLong lastCheck, long cooldownSeconds) {
+        long now = System.currentTimeMillis();
+        long cooldown = Math.max(cooldownSeconds, 0L) * 1000L;
+        while (true) {
+            long previous = lastCheck.get();
+            if (previous > 0 && now - previous < cooldown) {
+                return false;
+            }
+            if (lastCheck.compareAndSet(previous, now)) {
+                return true;
+            }
+        }
+    }
+
+    private boolean isConfigured(RuntimeConfig.Provider provider, String key) {
+        return provider.enabled() && key != null && !key.isBlank();
+    }
+
+    private boolean isBlock(RuntimeConfig.Provider provider, boolean available) {
+        return available && provider.enabled() && "block".equalsIgnoreCase(provider.mode());
+    }
+
+    private boolean isCensor(RuntimeConfig.Provider provider, boolean available) {
+        return available && provider.enabled() && "censor".equalsIgnoreCase(provider.mode());
+    }
+
+    private boolean isPunished(MistralApi.AiResult result, double threshold) {
+        return result != null && result.violation && result.probability >= threshold;
+    }
+
+    private boolean isPunished(GroqApi.AiResult result, double threshold) {
+        return result != null && result.violation && result.probability >= threshold;
+    }
+
+    private String censorResult(String message, List<String> badWords) {
+        if (badWords == null || badWords.isEmpty()) {
+            return censorMessage(message);
+        }
+        String result = message;
+        for (String badWord : badWords) {
+            result = replaceCaseInsensitive(result, badWord);
+        }
+        return result;
     }
 
     private String replaceCaseInsensitive(String source, String target) {
-        if (source == null || target == null || target.isEmpty())
+        if (target == null || target.isEmpty()) {
             return source;
-
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(target),
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher matcher = pattern.matcher(source);
-
-        StringBuilder sb = new StringBuilder();
+        }
+        Pattern pattern = Pattern.compile(Pattern.quote(target), Pattern.CASE_INSENSITIVE);
+        Matcher matcher = pattern.matcher(source);
+        StringBuffer result = new StringBuffer();
         while (matcher.find()) {
-            String matched = matcher.group();
-            String censored = censorBadWord(matched);
-            matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(censored));
+            matcher.appendReplacement(result, Matcher.quoteReplacement(censorWord(matcher.group())));
         }
-        matcher.appendTail(sb);
-        return sb.toString();
+        matcher.appendTail(result);
+        return result.toString();
     }
 
-    private String censorBadWord(String badWord) {
-        if (badWord == null || badWord.isEmpty())
-            return "";
-        if (badWord.length() <= 2) {
-            return "*".repeat(badWord.length());
+    private String censorWord(String word) {
+        if (word.length() <= 2) {
+            return "*".repeat(word.length());
         }
-        char first = badWord.charAt(0);
-        char last = badWord.charAt(badWord.length() - 1);
-        StringBuilder sb = new StringBuilder();
-        sb.append(first);
-        for (int i = 1; i < badWord.length() - 1; i++) {
-            char c = badWord.charAt(i);
-            if (Character.isWhitespace(c)) {
-                sb.append(' ');
-            } else {
-                sb.append('*');
-            }
+        StringBuilder result = new StringBuilder(word.length()).append(word.charAt(0));
+        for (int i = 1; i < word.length() - 1; i++) {
+            result.append(Character.isWhitespace(word.charAt(i)) ? ' ' : '*');
         }
-        sb.append(last);
-        return sb.toString();
+        return result.append(word.charAt(word.length() - 1)).toString();
     }
 
-    private String censorMessage(String msg) {
-        if (msg == null || msg.isEmpty())
-            return "";
-        String[] words = msg.split("(?<=\\s)|(?=\\s)");
-        StringBuilder sb = new StringBuilder();
-        for (String w : words) {
-            if (w.trim().isEmpty()) {
-                sb.append(w);
-            } else {
-                if (w.length() <= 2) {
-                    sb.append(w);
-                } else {
-                    sb.append(w.charAt(0));
-                    for (int i = 1; i < w.length() - 1; i++) {
-                        sb.append('*');
-                    }
-                    sb.append(w.charAt(w.length() - 1));
-                }
-            }
+    private String censorMessage(String message) {
+        String[] words = message.split("(?<=\\s)|(?=\\s)");
+        StringBuilder result = new StringBuilder();
+        for (String word : words) {
+            result.append(word.trim().isEmpty() ? word : censorWord(word));
         }
-        return sb.toString();
+        return result.toString();
+    }
+
+    private void showCensorTitle(UUID uuid, RuntimeConfig.CensorTitle titleConfig) {
+        scheduler.runForPlayer(uuid, () -> {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) {
+                return;
+            }
+            Title.Times times = Title.Times.times(
+                    Duration.ofMillis(titleConfig.fadeInMs()),
+                    Duration.ofMillis(titleConfig.stayMs()),
+                    Duration.ofMillis(titleConfig.fadeOutMs()));
+            player.showTitle(Title.title(Component.empty(),
+                    TextUtil.format(plugin.getMessageSnapshot().text("ai-helper.subtitle")), times));
+        });
     }
 
     private void processNext() {
         PendingMessage pending = queue.poll();
-        if (pending == null)
+        RuntimeConfig.Ai cfg = aiConfig;
+        if (pending == null || cfg == null) {
             return;
+        }
 
         List<String> plus = rules.getTrainingPlus();
         List<String> minus = rules.getTrainingMinus();
-
-        if (mistralApi != null
-                && "block".equalsIgnoreCase(plugin.getConfig().getString("ai-helper.mistral-api.mode", "block"))) {
-            mistralApi.checkMsg(pending.msg, rules.getRules(), plus, minus).thenAccept(res -> {
-                if (res != null) {
-                    processAsyncResult(pending, res, "Mistral", "ai-helper.mistral-api");
-                }
-            });
+        String systemPrompt = rules.getSystemPrompt();
+        if (isBlock(cfg.mistral(), mistralApi != null)) {
+            mistralApi.checkMsg(pending.msg, rules.getRules(), plus, minus, cfg, systemPrompt)
+                    .thenAccept(result -> processAsyncResult(pending, result, "Mistral", cfg.mistral()));
         }
-
-        if (groqApi != null
-                && "block".equalsIgnoreCase(plugin.getConfig().getString("ai-helper.groq-api.mode", "block"))) {
-            groqApi.checkMsg(pending.msg, rules.getRules(), plus, minus).thenAccept(res -> {
-                if (res != null) {
-                    MistralApi.AiResult dummy = new MistralApi.AiResult();
-                    dummy.violation = res.violation;
-                    dummy.rule = res.rule;
-                    dummy.probability = res.probability;
-                    dummy.bad_words = res.bad_words;
-                    processAsyncResult(pending, dummy, "Groq (" + groqApi.getModelName() + ")", "ai-helper.groq-api");
-                }
-            });
+        if (isBlock(cfg.groq(), groqApi != null)) {
+            String modelName = cfg.groq().model();
+            groqApi.checkMsg(pending.msg, rules.getRules(), plus, minus, cfg, systemPrompt)
+                    .thenAccept(result -> processAsyncResult(pending, result,
+                            "Groq (" + modelName + ")", cfg.groq()));
         }
     }
 
-    private void processAsyncResult(PendingMessage pending, MistralApi.AiResult res, String modelName,
-            String configPath) {
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            double threshold = plugin.getConfig().getDouble(configPath + ".punish-probability", 0.85);
-            String verdict = plugin.getMessageConfig().getString("ai-helper.verdict-clean", "&aЧИСТ");
+    private void processAsyncResult(PendingMessage pending, MistralApi.AiResult result, String modelName,
+            RuntimeConfig.Provider provider) {
+        if (result != null) {
+            processAsyncResult(pending, result.violation, result.probability, result.rule, modelName, provider);
+        }
+    }
 
-            if (res.violation && res.probability >= threshold) {
-                verdict = plugin.getMessageConfig().getString("ai-helper.verdict-punished", "&4НАКАЗАН");
-                AiRules.RuleInfo info = rules.getRules().get(res.rule);
-                if (info != null && info.punishCmd != null) {
-                    String cmd = info.punishCmd
+    private void processAsyncResult(PendingMessage pending, GroqApi.AiResult result, String modelName,
+            RuntimeConfig.Provider provider) {
+        if (result != null) {
+            processAsyncResult(pending, result.violation, result.probability, result.rule, modelName, provider);
+        }
+    }
+
+    private void processAsyncResult(PendingMessage pending, boolean violation, double probability, String rule,
+            String modelName,
+            RuntimeConfig.Provider provider) {
+        scheduler.runServer(() -> {
+            boolean punished = violation && probability >= provider.punishProbability();
+            String verdict = plugin.getMessageSnapshot().text(
+                    punished ? "ai-helper.verdict-punished" : "ai-helper.verdict-clean");
+            if (punished) {
+                AiRules.RuleInfo info = rules.getRules().get(rule);
+                if (info != null && info.punishCmd != null && !info.punishCmd.isEmpty()) {
+                    String command = info.punishCmd
                             .replace("%player%", pending.playerName)
                             .replace("%rule%", info.id)
-                            .replace("%probability%", String.valueOf(res.probability));
-                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+                            .replace("%probability%", String.valueOf(probability));
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
                 }
             }
 
-            String logMsg = plugin.getMessageConfig().getString("ai-helper.log-message", "")
+            String logMsg = plugin.getMessageSnapshot().text("ai-helper.log-message")
                     .replace("%player%", pending.playerName)
                     .replace("%message%", pending.msg);
-
-            String logRes = plugin.getMessageConfig().getString("ai-helper.log-result", "")
+            String logRes = plugin.getMessageSnapshot().text("ai-helper.log-result")
                     .replace("%model_ai%", modelName)
-                    .replace("%probability%", String.valueOf(res.probability))
+                    .replace("%probability%", String.valueOf(probability))
                     .replace("%verdict%", verdict);
-
-            boolean isPunished = res.violation && res.probability >= threshold;
-            boolean allLogs = plugin.getConfig().getBoolean(configPath + ".all-logs", true);
-
-            if (isPunished || allLogs) {
+            if (punished || provider.allLogs()) {
                 notifyAdmins(logMsg);
                 notifyAdmins(logRes);
             }
         });
     }
 
-    private void notifyAdmins(String txt) {
-        if (txt == null || txt.isEmpty())
+    private void notifyAdmins(String text) {
+        if (text == null || text.isEmpty()) {
             return;
-        net.kyori.adventure.text.Component comp = TextUtil.format(txt);
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            if (p.hasPermission("javachats.admin") || p.hasPermission("javachats.ai.log")) {
-                p.sendMessage(comp);
+        }
+        Component component = TextUtil.format(text);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (player.hasPermission("javachats.admin") || player.hasPermission("javachats.ai.log")) {
+                player.sendMessage(component);
             }
         }
-        Bukkit.getConsoleSender().sendMessage(comp);
+        Bukkit.getConsoleSender().sendMessage(component);
+    }
+
+    private String rootMessage(Throwable error) {
+        Throwable cause = error;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return String.valueOf(cause.getMessage());
     }
 
     public AiRules getRules() {
         return rules;
     }
 
-    private static class PendingMessage {
-        final String playerName;
-        final String msg;
+    @Override
+    public boolean isEnabled() {
+        RuntimeConfig.Ai cfg = aiConfig;
+        return cfg != null && (mistralApi != null || groqApi != null);
+    }
 
-        PendingMessage(String playerName, String msg) {
+    public void close() {
+        if (processTask != null) {
+            processTask.cancel();
+            processTask = null;
+        }
+        queue.clear();
+        if (mistralApi != null) {
+            mistralApi.close();
+        }
+        if (groqApi != null) {
+            groqApi.close();
+        }
+        mistralApi = null;
+        groqApi = null;
+        lastCheckMistral.set(0L);
+        lastCheckGroq.set(0L);
+    }
+
+    private static class PendingMessage {
+        private final String playerName;
+        private final String msg;
+
+        private PendingMessage(String playerName, String msg) {
             this.playerName = playerName;
             this.msg = msg;
         }

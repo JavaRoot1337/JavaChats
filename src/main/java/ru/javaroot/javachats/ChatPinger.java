@@ -3,18 +3,24 @@ package ru.javaroot.javachats;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.SoundCategory;
 import org.bukkit.entity.Player;
+import ru.javaroot.JavaChat;
 import ru.javaroot.javachats.utils.TextUtil;
 
 import java.time.Duration;
 import java.util.HashSet;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ChatPinger {
+    private static final Pattern MENTION_PATTERN = Pattern.compile("@(\\w+)");
     private final JavaChat plugin;
 
     public ChatPinger(JavaChat plugin) {
@@ -23,16 +29,13 @@ public class ChatPinger {
 
     public Set<Player> getMentionedPlayers(String message) {
         Set<Player> mentioned = new HashSet<>();
-        var cfg = plugin.getConfig();
-        if (!cfg.getBoolean("ping-chat.enabled", true))
+        if (!plugin.getRuntimeConfig().ping().enabled()) {
             return mentioned;
+        }
 
-        Pattern pattern = Pattern.compile("@(\\w+)");
-        Matcher matcher = pattern.matcher(message);
-
+        Matcher matcher = MENTION_PATTERN.matcher(message);
         while (matcher.find()) {
-            String name = matcher.group(1);
-            Player player = Bukkit.getPlayerExact(name);
+            Player player = Bukkit.getPlayerExact(matcher.group(1));
             if (player != null) {
                 mentioned.add(player);
             }
@@ -41,55 +44,50 @@ public class ChatPinger {
     }
 
     public String processMessageFor(String message, Player recipient) {
-        var cfg = plugin.getConfig();
-        if (!cfg.getBoolean("ping-chat.enabled", true))
+        if (!plugin.getRuntimeConfig().ping().enabled()) {
             return message;
+        }
 
-        var msgCfg = plugin.getMessageConfig();
-        String targetColor = msgCfg.getString("ping.highlight.target", "&9");
-        String othersColor = msgCfg.getString("ping.highlight.others", "&7");
-
-        Pattern pattern = Pattern.compile("@" + recipient.getName() + "\\b", Pattern.CASE_INSENSITIVE);
-        return pattern.matcher(message).replaceAll(targetColor + "@" + recipient.getName() + othersColor);
+        String targetColor = plugin.getMessageSnapshot().text("ping.highlight.target");
+        String othersColor = plugin.getMessageSnapshot().text("ping.highlight.others");
+        String target = Pattern.quote(recipient.getName());
+        return Pattern.compile("@" + target + "\\b", Pattern.CASE_INSENSITIVE)
+                .matcher(message)
+                .replaceAll(Matcher.quoteReplacement(targetColor + "@" + recipient.getName() + othersColor));
     }
 
     public void sendNotification(Player player) {
-        var cfg = plugin.getConfig();
-        var msgCfg = plugin.getMessageConfig();
-
-        if (cfg.getBoolean("ping-chat.sound.enable", true)) {
-            try {
-                @SuppressWarnings("deprecation")
-                Sound sound = Sound.valueOf(cfg.getString("ping-chat.sound.name", "BLOCK_NOTE_BLOCK_GUITAR"));
-                float volume = (float) cfg.getDouble("ping-chat.sound.volume", 0.7);
-                float pitch = (float) cfg.getDouble("ping-chat.sound.pitch", 2.0);
-                String catName = cfg.getString("ping-chat.sound.category", "MASTER");
-                SoundCategory cat;
-                try {
-                    cat = SoundCategory.valueOf(catName);
-                } catch (IllegalArgumentException e) {
-                    cat = SoundCategory.MASTER;
-                }
-                player.playSound(player.getLocation(), sound, cat, volume, pitch);
-            } catch (Exception ignored) {
-            }
+        var cfg = plugin.getRuntimeConfig().ping();
+        if (cfg.soundEnabled()) {
+            playSound(player, cfg);
         }
 
-        int in = cfg.getInt("ping-chat.title.fade-in", 10);
-        int stay = cfg.getInt("ping-chat.title.stay", 70);
-        int out = cfg.getInt("ping-chat.title.fade-out", 20);
+        Title.Times times = Title.Times.times(
+                Duration.ofMillis(cfg.fadeInTicks() * 50L),
+                Duration.ofMillis(cfg.stayTicks() * 50L),
+                Duration.ofMillis(cfg.fadeOutTicks() * 50L));
+        Component title = TextUtil.format(plugin.getMessageSnapshot().text("ping.title.text"));
+        Component sub = TextUtil.format(plugin.getMessageSnapshot().text("ping.title.sub-text"));
+        player.showTitle(Title.title(title, sub, times));
+    }
 
-        var times = Title.Times.times(Duration.ofMillis(in * 50L), Duration.ofMillis(stay * 50L),
-                Duration.ofMillis(out * 50L));
+    private void playSound(Player player, ru.javaroot.javachats.config.RuntimeConfig.Ping cfg) {
+        String soundName = cfg.sound();
+        if (soundName == null || soundName.isEmpty()) {
+            return;
+        }
 
-        Component title = TextUtil.format(msgCfg.getString("ping.title.text", ""));
-        Component sub = TextUtil.format(msgCfg.getString("ping.title.sub-text", ""));
-
-        if (!net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(title)
-                .isEmpty()
-                || !net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(sub)
-                        .isEmpty()) {
-            player.showTitle(Title.title(title, sub, times));
+        try {
+            Sound sound = Registry.SOUNDS.get(NamespacedKey.minecraft(soundName.toLowerCase(Locale.ROOT)));
+            if (sound == null) {
+                throw new IllegalArgumentException(soundName);
+            }
+            SoundCategory category = SoundCategory.valueOf(cfg.soundCategory().toUpperCase(Locale.ROOT));
+            float volume = (float) cfg.volume();
+            float pitch = (float) cfg.pitch();
+            player.playSound(player.getLocation(), sound, category, volume, pitch);
+        } catch (IllegalArgumentException ignored) {
+            plugin.getLogs().warning("ping-sound", Map.of("sound", soundName));
         }
     }
 }

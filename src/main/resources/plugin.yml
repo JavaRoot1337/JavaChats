@@ -1,31 +1,47 @@
 name: JavaChats
 version: 1.0
-main: ru.javaroot.javachats.JavaChat
-api-version: '1.21'
+main: ru.javaroot.JavaChat
+api-version: '26.2'
+description: Чаты и модерация
 authors: [JavaRoot]
+softdepend: [LuckPerms]
+libraries:
+  - net.luckperms:api:5.4
 
 commands:
   javachats:
+    description: Управление настройками JavaChats
     permission: javachats.admin
     usage: /javachats reload
   msg:
+    description: Отправка личного сообщения
     aliases: [tell, w]
     permission: javachats.msg
     usage: /msg <игрок> <сообщение>
   aihelper:
+    description: Управление обучением AIHelper
     permission: javachats.admin
     usage: /aihelper add <plus|minus> <сообщение>
 
 permissions:
   javachats.admin:
+    description: Управление JavaChats и AIHelper
     default: op
   javachats.local.view:
+    description: Просмотр локального чата
     default: true
   javachats.local.send:
+    description: Отправка сообщений в локальный чат
     default: true
   javachats.global.view:
+    description: Просмотр глобального чата
     default: true
   javachats.global.send:
+    description: Отправка сообщений в глобальный чат
     default: true
   javachats.msg:
+    description: Использование личных сообщений
     default: true
+  javachats.ai.log:
+    description: Просмотр логов AIHelper
+    default: op

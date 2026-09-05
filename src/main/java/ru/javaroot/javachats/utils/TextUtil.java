@@ -8,6 +8,12 @@ import java.util.regex.Pattern;
 public class TextUtil {
     private static final Pattern HEX_PATTERN = Pattern.compile("&#([a-fA-F0-9]{6})");
     private static final Pattern COLOR_CODE_PATTERN = Pattern.compile("(?i)§[0-9a-fk-orx]");
+    private static final Pattern AMPERSAND_CODE_PATTERN = Pattern.compile("(?i)&([0-9a-fk-or])");
+    private static final LegacyComponentSerializer SERIALIZER = LegacyComponentSerializer.builder()
+            .hexColors()
+            .useUnusualXRepeatedCharacterHexFormat()
+            .character('§')
+            .build();
 
     public static Component format(String s) {
         if (s == null)
@@ -20,13 +26,13 @@ public class TextUtil {
                     + hex.charAt(3) + "§" + hex.charAt(4) + "§" + hex.charAt(5));
         }
         matcher.appendTail(sb);
-        return LegacyComponentSerializer.legacySection().deserialize(sb.toString().replace('&', '§'));
+        return SERIALIZER.deserialize(AMPERSAND_CODE_PATTERN.matcher(sb.toString()).replaceAll("§$1"));
     }
 
     public static String getColors(String s) {
         if (s == null)
             return "";
-        String formatted = LegacyComponentSerializer.legacySection().serialize(format(s));
+        String formatted = SERIALIZER.serialize(format(s));
         Matcher matcher = COLOR_CODE_PATTERN.matcher(formatted);
         StringBuilder colors = new StringBuilder();
         while (matcher.find()) {

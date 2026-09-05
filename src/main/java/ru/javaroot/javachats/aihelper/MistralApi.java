@@ -3,7 +3,8 @@ package ru.javaroot.javachats.aihelper;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import ru.javaroot.javachats.JavaChat;
+import ru.javaroot.JavaChat;
+import ru.javaroot.javachats.config.RuntimeConfig;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -15,109 +16,120 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
-public class MistralApi {
-    private static final String URL = "https://api.mistral.ai/v1/chat/completions";
-    private static final String DEFAULT_PROMPT = 
-        "Ты профессиональный модератор русскоязычного Minecraft-сервера с продвинутой системой распознавания обходов и скрытого мата/оскорблений.\n" +
-        "Твоя задача — анализировать сообщения игроков на соответствие правилам сервера:\n" +
-        "%rules%\n\n" +
-        "Критически важно распознавать любые обходы фильтрации, включая:\n" +
-        "1. Замену букв на похожие латинские символы, цифры или спецсимволы (например: 'u' или 'uu' вместо 'и', '0' или 'O' вместо 'о', 'n' вместо 'п', 'a' вместо 'а', '@' вместо 'а', 'La' вместо 'ла' и т.д.). Пример: \"PUДрuuLaa\" (это завуалированное \"пидрила\"), \"nидop\" (это \"пидор\"), \"мaть шлюxа\" с латинскими буквами.\n" +
-        "2. Использование смеси русских и латинских букв в пределах одного слова (mixed alphabets / homoglyphs).\n" +
-        "3. Написание слов с пробелами между буквами или другими символами (например: \"п и д о р\", \"п.и.д.о.р\", \"пі Д ОOOr\").\n" +
-        "4. Удвоение или растягивание букв (например: \"пидооорааас\", \"пиидрилаа\").\n" +
-        "5. Транслитерацию русских матов латиницей (например: \"pidor\", \"blyat\", \"shluha\").\n\n" +
-        "Если ты обнаружил хотя бы малейший намек на завуалированное или прямое нарушение правил (мат, оскорбления, оскорбления родных и т.д.), ты ДОЛЖЕН:\n" +
-        "- Установить \"violation\": true\n" +
-        "- Определить вероятность \"probability\" (если это явный обход мата, вероятность должна быть близка к 1.0, например 0.95-1.0)\n" +
-        "- Добавить это слово или фразу в том виде, в каком её написал игрок (со всеми обходами, пробелами, неверными буквами) в список \"bad_words\". Пример: если игрок написал \"ты PUДрuuLaa\", то в \"bad_words\" должно быть [\"PUДрuuLaa\"].\n\n" +
-        "%examples_plus%" +
-        "%examples_minus%" +
-        "Ответь строго в формате JSON: {\"violation\": true/false, \"rule\": \"id\", \"probability\": 0.0-1.0, \"bad_words\": [\"оригинальное_слово_с_обходом\"]}";
-
-    private final HttpClient http;
+public class MistralApi implements AutoCloseable {
     private final JavaChat plugin;
+    private final HttpClient http;
     private final Gson gson = new Gson();
     private final String key;
+    private final URI endpoint;
+    private final String model;
+    private final Duration timeout;
 
-    public MistralApi(JavaChat plugin, String key) {
+    public MistralApi(JavaChat plugin, String key, String endpoint, String model, long timeoutSeconds) {
         this.plugin = plugin;
         this.key = key;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        this.endpoint = URI.create(endpoint);
+        this.model = model;
+        this.timeout = Duration.ofSeconds(timeoutSeconds);
+        this.http = HttpClient.newBuilder().connectTimeout(timeout).build();
+    }
+
+    public MistralApi(JavaChat plugin, RuntimeConfig.Provider provider) {
+        this(plugin, provider, plugin.getConfig().getString("ai-helper.mistral-api.api-key"));
+    }
+
+    public MistralApi(JavaChat plugin, RuntimeConfig.Provider provider, String key) {
+        this(plugin, key, provider.endpoint(), provider.model(), provider.timeoutSeconds());
     }
 
     public CompletableFuture<AiResult> checkMsg(String msg, Map<String, AiRules.RuleInfo> rules, List<String> plus,
             List<String> minus) {
-        if (key == null || key.isEmpty())
+        return checkMsg(msg, rules, plus, minus, plugin.getRuntimeConfig().ai());
+    }
+
+    public CompletableFuture<AiResult> checkMsg(String msg, Map<String, AiRules.RuleInfo> rules, List<String> plus,
+            List<String> minus, RuntimeConfig.Ai config) {
+        return checkMsg(msg, rules, plus, minus, config, config.systemPrompt());
+    }
+
+    public CompletableFuture<AiResult> checkMsg(String msg, Map<String, AiRules.RuleInfo> rules, List<String> plus,
+            List<String> minus, RuntimeConfig.Ai config, String systemPrompt) {
+        String userPromptFormat = config.userPromptFormat();
+        if (key == null || key.isEmpty() || systemPrompt == null || userPromptFormat == null) {
             return CompletableFuture.completedFuture(null);
+        }
 
         String context = rules.values().stream()
-                .map(r -> "- " + r.id + ": " + r.description)
+                .map(rule -> "- " + rule.id + ": " + rule.description)
                 .collect(Collectors.joining("\n"));
-
-        String exPlus = "";
-        if (plus != null && !plus.isEmpty()) {
-            StringBuilder sb = new StringBuilder("Примеры сообщений, которые НЕ нарушают правила (их НЕ нужно наказывать):\n");
-            plus.forEach(p -> sb.append("- ").append(p).append("\n"));
-            sb.append("\n");
-            exPlus = sb.toString();
-        }
-
-        String exMinus = "";
-        if (minus != null && !minus.isEmpty()) {
-            StringBuilder sb = new StringBuilder("Примеры сообщений, которые НАРУШАЮТ правила (их обязательно нужно наказать):\n");
-            minus.forEach(m -> sb.append("- ").append(m).append("\n"));
-            sb.append("\n");
-            exMinus = sb.toString();
-        }
-
-        String promptTemplate = plugin.getConfig().getString("ai-helper.system-prompt", DEFAULT_PROMPT);
-        String prompt = promptTemplate
+        String exPlus = buildExamples("Примеры сообщений, которые НЕ нарушают правила:", plus);
+        String exMinus = buildExamples("Примеры сообщений, которые НАРУШАЮТ правила:", minus);
+        String prompt = systemPrompt
                 .replace("%rules%", context)
                 .replace("%examples_plus%", exPlus)
                 .replace("%examples_minus%", exMinus);
 
-        JsonObject sysMsg = new JsonObject();
-        sysMsg.addProperty("role", "system");
-        sysMsg.addProperty("content", prompt);
-
-        JsonObject usrMsg = new JsonObject();
-        usrMsg.addProperty("role", "user");
-        String userPromptFormat = plugin.getConfig().getString("ai-helper.user-prompt-format", "Сообщение: %message%");
-        usrMsg.addProperty("content", userPromptFormat.replace("%message%", msg));
-
-        JsonArray arr = new JsonArray();
-        arr.add(sysMsg);
-        arr.add(usrMsg);
+        JsonArray messages = new JsonArray();
+        messages.add(message("system", prompt));
+        messages.add(message("user", userPromptFormat.replace("%message%", msg)));
 
         JsonObject body = new JsonObject();
-        body.addProperty("model", "mistral-large-latest");
-        body.add("messages", arr);
-        body.addProperty("temperature", 0.0);
-        body.add("response_format", gson.fromJson("{\"type\": \"json_object\"}", JsonObject.class));
+        body.addProperty("model", model);
+        body.add("messages", messages);
+        body.addProperty("temperature", config.temperature());
+        body.add("response_format", gson.fromJson("{\"type\":\"json_object\"}", JsonObject.class));
 
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(URL))
+        HttpRequest request = HttpRequest.newBuilder(endpoint)
+                .timeout(timeout)
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + key)
                 .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
                 .build();
 
-        return http.sendAsync(req, HttpResponse.BodyHandlers.ofString()).thenApply(res -> {
-            if (res.statusCode() >= 200 && res.statusCode() < 300) {
-                try {
-                    JsonObject json = gson.fromJson(res.body(), JsonObject.class);
-                    String content = json.getAsJsonArray("choices").get(0).getAsJsonObject()
-                            .getAsJsonObject("message").get("content").getAsString();
-                    return gson.fromJson(content, AiResult.class);
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Error parsing Mistral JSON: " + e.getMessage());
-                }
-            } else {
-                plugin.getLogger().warning("Mistral API Error (" + res.statusCode() + "): " + res.body());
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenApply(response -> {
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                plugin.getLogs().warning("mistral-http", Map.of(
+                        "status", String.valueOf(response.statusCode())));
+                return null;
             }
+            try {
+                JsonObject json = gson.fromJson(response.body(), JsonObject.class);
+                String content = json.getAsJsonArray("choices").get(0).getAsJsonObject()
+                        .getAsJsonObject("message").get("content").getAsString();
+                return gson.fromJson(content, AiResult.class);
+            } catch (RuntimeException ex) {
+                plugin.getLogs().warning("mistral-parse", Map.of(
+                        "error", String.valueOf(ex.getMessage())));
+                return null;
+            }
+        }).exceptionally(error -> {
+            plugin.getLogs().warning("mistral-request", Map.of(
+                    "error", String.valueOf(error.getMessage())));
             return null;
         });
+    }
+
+    private JsonObject message(String role, String content) {
+        JsonObject message = new JsonObject();
+        message.addProperty("role", role);
+        message.addProperty("content", content);
+        return message;
+    }
+
+    private String buildExamples(String title, List<String> examples) {
+        if (examples == null || examples.isEmpty()) {
+            return "";
+        }
+        StringBuilder result = new StringBuilder(title).append('\n');
+        for (String example : examples) {
+            result.append("- ").append(example).append('\n');
+        }
+        return result.append('\n').toString();
+    }
+
+    @Override
+    public void close() {
+        http.close();
     }
 
     public static class AiResult {

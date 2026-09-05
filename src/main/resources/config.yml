@@ -7,6 +7,8 @@ chats:
     viewing-perms: 'javachats.local.view' # права на просмотр
     sending-perms: 'javachats.local.send' # права на отправку
     sound: '' # звук
+    volume: 1.0 # громкость
+    pitch: 1.0 # высота
   global:
     enable: true # глобальный чат
     range: -1 # радиус (-1 безлимит)
@@ -15,6 +17,8 @@ chats:
     viewing-perms: 'javachats.global.view' # права на просмотр
     sending-perms: 'javachats.global.send' # права на отправку
     sound: '' # звук
+    volume: 1.0 # громкость
+    pitch: 1.0 # высота
 
 # пинг
 ping-chat:
@@ -41,11 +45,19 @@ join-quit:
 settings:
   anti-caps-percent: 75 # процент капса
   anti-caps-min-length: 4 # мин длина сообщения
+  anti-caps-fade-in-ms: 500 # появление
+  anti-caps-stay-ms: 3500 # показ
+  anti-caps-fade-out-ms: 1000 # исчезновение
 
 # антиспам
 anti-spam:
   enable: true # антиспам
   delay-ms: 1000 # задержка мс
+  strikes: 3 # серия
+  strike-delay-ticks: 2 # пауза
+  fade-in-ms: 100 # появление
+  stay-ms: 2000 # показ
+  fade-out-ms: 100 # исчезновение
 
 # антиповтор
 anti-repeat:
@@ -53,40 +65,71 @@ anti-repeat:
 
 # ИИ хелпер
 ai-helper:
-  system-prompt: | # промпт, я его через ИИ прогнал что бы другой ИИ понимал больше xD ))))
-    Ты профессиональный модератор русскоязычного Minecraft-сервера с продвинутой системой распознавания обходов и скрытого мата/оскорблений.
-    Твоя задача — анализировать сообщения игроков на соответствие правилам сервера:
-    %rules%
-
-    Критически важно распознавать любые обходы фильтрации, включая:
-    1. Замену букв на похожие латинские символы, цифры или спецсимволы (например: 'u' или 'uu' вместо 'и', '0' или 'O' вместо 'о', 'n' вместо 'п', 'a' вместо 'а', '@' вместо 'а', 'La' вместо 'ла' и т.д.). Пример: "PUДрuuLaa" (это завуалированное "пидрила"), "nидop" (это "пидор"), "мaть шлюxа" с латинскими буквами.
-    2. Использование смеси русских и латинских букв в пределах одного слова (mixed alphabets / homoglyphs).
-    3. Написание слов с пробелами между буквами или другими символами (например: "п и д о р", "п.и.д.о.р", "пі Д ОOOr").
-    4. Удвоение или растягивание букв (например: "пидооорааас", "пиидрилаа").
-    5. Транслитерацию русских матов латиницей (например: "pidor", "blyat", "shluha").
-
-    Если ты обнаружил хотя бы малейший намек на завуалированное или прямое нарушение правил (мат, оскорбления, оскорбления родных и т.д.), ты ДОЛЖЕН:
-    - Установить "violation": true
-    - Определить вероятность "probability" (если это явный обход мата, вероятность должна быть близка к 1.0, например 0.95-1.0)
-    - Добавить это слово или фразу в том виде, в каком её написал игрок (со всеми обходами, пробелами, неверными буквами) в список "bad_words". Пример: если игрок написал "ты PUДрuuLaa", то в "bad_words" должно быть ["PUДрuuLaa"].
-
-    %examples_plus%
-    %examples_minus%
-    Ответь строго в формате JSON: {"violation": true/false, "rule": "id", "probability": 0.0-1.0, "bad_words": ["оригинальное_слово_с_обходом"]}
   user-prompt-format: 'Сообщение: %message%' # запрос
+  temperature: 0.0 # температура
+  censor-timeout-seconds: 5 # таймаут цензуры
+  censor-title:
+    fade-in-ms: 100 # появление
+    stay-ms: 2000 # показ
+    fade-out-ms: 100 # исчезновение
+  block:
+    initial-delay-ticks: 20 # запуск
+    max-queue-size: 50 # очередь
   mistral-api:
-    enable: true # mistral
-    api-key: 'Mghc7gdF2CL454aXAQewRhQgnoO99hDj' # api mistral, это для моих тестов
-    #рекомендую заменить для конфиденциальность
-    cooldown: 4 # kd
-    all-logs: true # logs
-    mode: censor # block / censor
+    enable: true # сервис
+    api-key: '' # ключ
+    endpoint: 'https://api.mistral.ai/v1/chat/completions' # адрес
+    model: 'mistral-large-latest' # модель
+    timeout-seconds: 10 # таймаут
+    cooldown: 4 # задержка
+    all-logs: true # все логи
+    mode: censor # режим
     punish-probability: 0.85 # вероятность
-  groq-api: #чесна бля не тестил даже
-    enable: false # groq
-    api-key: '' # api groq
-    model: 'llama-3.1-8b-instant' # model groq
-    cooldown: 4 # kd
-    all-logs: true # logs
-    mode: censor # block / censor
+
+  groq-api:
+    enable: false # сервис
+    api-key: '' # ключ
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions' # адрес
+    model: 'llama-3.1-8b-instant' # модель
+    timeout-seconds: 10 # таймаут
+    cooldown: 4 # задержка
+    all-logs: true # все логи
+    mode: censor # режим
     punish-probability: 0.85 # вероятность
+
+# логи
+logs:
+  console:
+    enabled: true # консоль
+    messages:
+      config-resource-missing: 'Не найден ресурс %resource%.'
+      config-defaults-load: 'Не удалось загрузить настройки %resource%: %error%'
+      chat-file-create: 'Не удалось создать файл лога чата: %error%'
+      chat-file-write: 'Не удалось записать лог чата: %error%'
+      chat-file-pattern: 'Некорректный шаблон файла лога: %error%'
+      chat-file-config: 'Некорректные настройки файла лога: папка %folder%, расширение %extension%'
+      ping-sound: 'Некорректный звук пинга: %sound%'
+      mistral-http: 'Mistral API вернул HTTP %status%.'
+      mistral-parse: 'Ошибка разбора ответа Mistral: %error%'
+      mistral-request: 'Ошибка запроса Mistral: %error%'
+      groq-http: 'Groq API вернул HTTP %status%.'
+      groq-parse: 'Ошибка разбора ответа Groq: %error%'
+      groq-request: 'Ошибка запроса Groq: %error%'
+      ai-rule-description: 'Пропущено правило ИИ без описания: %rule%'
+      ai-training-read: 'Не удалось прочитать %file%: %error%'
+      ai-training-write: 'Не удалось записать %file%: %error%'
+      mistral-config: 'Некорректная настройка Mistral API: %error%'
+      groq-config: 'Некорректная настройка Groq API: %error%'
+      moderation-request: 'Ошибка проверки сообщения ИИ: %error%'
+  chat:
+    enabled: true # файл
+    folder: logs # папка
+    file-name-pattern: 'yyyy-MM-dd-HH-mm-ss' # имя
+    file-extension: '.log' # расширение
+    time-pattern: 'yyyy-MM-dd HH:mm:ss' # время
+    line-format: '[%time%] %message%' # строка
+    censor-suffix: ' (цензура)' # цензура
+    startup: 'Лог чата запущен.' # запуск
+    local: '[ЛОКАЛЬНЫЙ] %player%: %message%' # локальный
+    global: '[ГЛОБАЛЬНЫЙ] %player%: %message%' # глобальный
+    private: '[ЛС] %sender% -> %target%: %message%' # личный
