@@ -1,16 +1,17 @@
 package ru.javaroot.javachats.aihelper;
 
-import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitTask;
 import ru.javaroot.JavaChat;
 import ru.javaroot.javachats.api.ModerationResult;
 import ru.javaroot.javachats.api.ModerationService;
 import ru.javaroot.javachats.config.RuntimeConfig;
 import ru.javaroot.javachats.runtime.ServerScheduler;
 import ru.javaroot.javachats.utils.TextUtil;
+import ru.javaroot.javachats.utils.LogVars;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -20,6 +21,9 @@ import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
@@ -35,7 +39,8 @@ public class AiMod implements ModerationService {
     private volatile RuntimeConfig.Ai aiConfig;
     private MistralApi mistralApi;
     private GroqApi groqApi;
-    private ScheduledTask processTask;
+    private BukkitTask processTask;
+    private final ScheduledExecutorService timeoutExecutor = Executors.newSingleThreadScheduledExecutor();
 
     public AiMod(JavaChat plugin) {
         this(plugin, new ServerScheduler(plugin));
@@ -48,19 +53,19 @@ public class AiMod implements ModerationService {
     }
 
     public void reload() {
-        close();
+        stopProviders();
         RuntimeConfig.Ai config = plugin.getRuntimeConfig().ai();
         rules.load(config.systemPrompt());
         aiConfig = config;
 
         RuntimeConfig.Provider mistral = aiConfig.mistral();
-        String mistralKey = plugin.getConfig().getString("ai-helper.mistral-api.api-key");
+        String mistralKey = mistral.apiKey();
         if (isConfigured(mistral, mistralKey)) {
             mistralApi = createMistral(mistral, mistralKey);
         }
 
         RuntimeConfig.Provider groq = aiConfig.groq();
-        String groqKey = plugin.getConfig().getString("ai-helper.groq-api.api-key");
+        String groqKey = groq.apiKey();
         if (isConfigured(groq, groqKey)) {
             groqApi = createGroq(groq, groqKey);
         }
@@ -74,7 +79,7 @@ public class AiMod implements ModerationService {
         }
         if (periodSeconds > 0 && periodSeconds != Long.MAX_VALUE) {
             processTask = scheduler.runAsyncRepeating(this::processNext,
-                    aiConfig.blockInitialDelayTicks() * 50L, periodSeconds, TimeUnit.SECONDS);
+                    aiConfig.blockInitialDelayTicks(), periodSeconds, TimeUnit.SECONDS);
         }
     }
 
@@ -82,7 +87,7 @@ public class AiMod implements ModerationService {
         try {
             return new MistralApi(plugin, provider, key);
         } catch (RuntimeException ex) {
-            plugin.getLogs().warning("mistral-config", Map.of("error", String.valueOf(ex.getMessage())));
+            plugin.getLogs().warning("mistral-config", LogVars.of("error", String.valueOf(ex.getMessage())));
             return null;
         }
     }
@@ -91,7 +96,7 @@ public class AiMod implements ModerationService {
         try {
             return new GroqApi(plugin, provider, key);
         } catch (RuntimeException ex) {
-            plugin.getLogs().warning("groq-config", Map.of("error", String.valueOf(ex.getMessage())));
+            plugin.getLogs().warning("groq-config", LogVars.of("error", String.valueOf(ex.getMessage())));
             return null;
         }
     }
@@ -132,11 +137,12 @@ public class AiMod implements ModerationService {
                 ? groqApi.checkMsg(msg, rules.getRules(), plus, minus, cfg, systemPrompt)
                 : CompletableFuture.completedFuture(null);
 
-        return CompletableFuture.allOf(mistral, groq)
-                .orTimeout(Math.max(cfg.censorTimeoutSeconds(), 0L), TimeUnit.SECONDS)
+        CompletableFuture<ModerationResult> combined = CompletableFuture.allOf(mistral, groq)
                 .thenApply(ignored -> combineModeration(playerId, msg, mistral.join(), groq.join(), cfg))
+                ;
+        return withTimeout(combined, cfg.censorTimeoutSeconds())
                 .exceptionally(error -> {
-                    plugin.getLogs().warning("moderation-request", Map.of("error", rootMessage(error)));
+                    plugin.getLogs().warning("moderation-request", LogVars.of("error", rootMessage(error)));
                     return ModerationResult.clean();
                 });
     }
@@ -192,7 +198,7 @@ public class AiMod implements ModerationService {
     }
 
     private boolean isConfigured(RuntimeConfig.Provider provider, String key) {
-        return provider.enabled() && key != null && !key.isBlank();
+        return provider.enabled() && key != null && !key.trim().isEmpty();
     }
 
     private boolean isBlock(RuntimeConfig.Provider provider, boolean available) {
@@ -238,7 +244,11 @@ public class AiMod implements ModerationService {
 
     private String censorWord(String word) {
         if (word.length() <= 2) {
-            return "*".repeat(word.length());
+            StringBuilder stars = new StringBuilder(word.length());
+            for (int i = 0; i < word.length(); i++) {
+                stars.append('*');
+            }
+            return stars.toString();
         }
         StringBuilder result = new StringBuilder(word.length()).append(word.charAt(0));
         for (int i = 1; i < word.length() - 1; i++) {
@@ -262,7 +272,7 @@ public class AiMod implements ModerationService {
             if (player == null || !player.isOnline()) {
                 return;
             }
-            Title.Times times = Title.Times.times(
+            Title.Times times = TextUtil.titleTimes(
                     Duration.ofMillis(titleConfig.fadeInMs()),
                     Duration.ofMillis(titleConfig.stayMs()),
                     Duration.ofMillis(titleConfig.fadeOutMs()));
@@ -370,7 +380,19 @@ public class AiMod implements ModerationService {
         return cfg != null && (mistralApi != null || groqApi != null);
     }
 
-    public void close() {
+    private CompletableFuture<ModerationResult> withTimeout(CompletableFuture<ModerationResult> future,
+            long timeoutSeconds) {
+        if (timeoutSeconds <= 0) {
+            return future;
+        }
+        ScheduledFuture<?> timeout = timeoutExecutor.schedule(
+                () -> future.completeExceptionally(new IllegalStateException("moderation timeout")),
+                timeoutSeconds, TimeUnit.SECONDS);
+        future.whenComplete((result, error) -> timeout.cancel(false));
+        return future;
+    }
+
+    private void stopProviders() {
         if (processTask != null) {
             processTask.cancel();
             processTask = null;
@@ -386,6 +408,11 @@ public class AiMod implements ModerationService {
         groqApi = null;
         lastCheckMistral.set(0L);
         lastCheckGroq.set(0L);
+    }
+
+    public void close() {
+        stopProviders();
+        timeoutExecutor.shutdownNow();
     }
 
     private static class PendingMessage {

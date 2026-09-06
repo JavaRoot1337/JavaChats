@@ -10,6 +10,7 @@ import org.bukkit.SoundCategory;
 import org.bukkit.entity.Player;
 import ru.javaroot.JavaChat;
 import ru.javaroot.javachats.utils.TextUtil;
+import ru.javaroot.javachats.utils.LogVars;
 
 import java.time.Duration;
 import java.util.HashSet;
@@ -57,12 +58,12 @@ public class ChatPinger {
     }
 
     public void sendNotification(Player player) {
-        var cfg = plugin.getRuntimeConfig().ping();
+        ru.javaroot.javachats.config.RuntimeConfig.Ping cfg = plugin.getRuntimeConfig().ping();
         if (cfg.soundEnabled()) {
             playSound(player, cfg);
         }
 
-        Title.Times times = Title.Times.times(
+        Title.Times times = TextUtil.titleTimes(
                 Duration.ofMillis(cfg.fadeInTicks() * 50L),
                 Duration.ofMillis(cfg.stayTicks() * 50L),
                 Duration.ofMillis(cfg.fadeOutTicks() * 50L));
@@ -87,7 +88,7 @@ public class ChatPinger {
             float pitch = (float) cfg.pitch();
             player.playSound(player.getLocation(), sound, category, volume, pitch);
         } catch (IllegalArgumentException ignored) {
-            plugin.getLogs().warning("ping-sound", Map.of("sound", soundName));
+            plugin.getLogs().warning("ping-sound", LogVars.of("sound", soundName));
         }
     }
 }

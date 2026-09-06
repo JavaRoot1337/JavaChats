@@ -4,6 +4,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import ru.javaroot.JavaChat;
+import ru.javaroot.javachats.utils.LogVars;
 
 import java.io.File;
 import java.io.IOException;
@@ -53,7 +54,7 @@ public class AiRules {
             for (String key : section.getKeys(false)) {
                 String description = section.getString(key + ".description");
                 if (description == null || description.isEmpty()) {
-                    plugin.getLogs().warning("ai-rule-description", Map.of("rule", key));
+                    plugin.getLogs().warning("ai-rule-description", LogVars.of("rule", key));
                     continue;
                 }
                 rules.put(key, new RuleInfo(key, description, section.getString(key + ".punish-command")));
@@ -75,14 +76,14 @@ public class AiRules {
             Files.createDirectories(path.getParent());
             if (Files.notExists(path)) {
                 Files.createFile(path);
-                return List.of();
+                return java.util.Collections.emptyList();
             }
             return Files.readAllLines(path, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            plugin.getLogs().warning("ai-training-read", Map.of(
+            plugin.getLogs().warning("ai-training-read", LogVars.of(
                     "file", fileName,
                     "error", String.valueOf(e.getMessage())));
-            return List.of();
+            return java.util.Collections.emptyList();
         }
     }
 
@@ -103,10 +104,10 @@ public class AiRules {
         Path path = new File(plugin.getDataFolder(), fileName).toPath();
         try {
             Files.createDirectories(path.getParent());
-            Files.writeString(path, cleaned + System.lineSeparator(), StandardCharsets.UTF_8,
+            Files.write(path, (cleaned + System.lineSeparator()).getBytes(StandardCharsets.UTF_8),
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
-            plugin.getLogs().warning("ai-training-write", Map.of(
+            plugin.getLogs().warning("ai-training-write", LogVars.of(
                     "file", fileName,
                     "error", String.valueOf(e.getMessage())));
             return false;
@@ -117,15 +118,15 @@ public class AiRules {
     }
 
     public synchronized Map<String, RuleInfo> getRules() {
-        return Map.copyOf(rules);
+        return java.util.Collections.unmodifiableMap(new HashMap<String, RuleInfo>(rules));
     }
 
     public synchronized List<String> getTrainingPlus() {
-        return List.copyOf(trainingPlus);
+        return java.util.Collections.unmodifiableList(new ArrayList<String>(trainingPlus));
     }
 
     public synchronized List<String> getTrainingMinus() {
-        return List.copyOf(trainingMinus);
+        return java.util.Collections.unmodifiableList(new ArrayList<String>(trainingMinus));
     }
 
     public synchronized String getSystemPrompt() {
@@ -133,11 +134,11 @@ public class AiRules {
     }
 
     static String resolveSystemPrompt(boolean promptFileExists, String configuredPrompt, String fallbackPrompt) {
-        String loadedPrompt = configuredPrompt == null || configuredPrompt.isBlank() ? null : configuredPrompt;
+        String loadedPrompt = configuredPrompt == null || configuredPrompt.trim().isEmpty() ? null : configuredPrompt;
         if (promptFileExists && loadedPrompt != null) {
             return loadedPrompt;
         }
-        if (fallbackPrompt != null && !fallbackPrompt.isBlank()) {
+        if (fallbackPrompt != null && !fallbackPrompt.trim().isEmpty()) {
             return fallbackPrompt;
         }
         return loadedPrompt;

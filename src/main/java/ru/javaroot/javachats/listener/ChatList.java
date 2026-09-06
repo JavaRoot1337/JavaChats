@@ -1,20 +1,15 @@
 package ru.javaroot.javachats.listener;
 
-import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.title.Title;
-import net.luckperms.api.model.user.User;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
 import ru.javaroot.JavaChat;
 import ru.javaroot.javachats.ChatPinger;
 import ru.javaroot.javachats.api.ApiRegistration;
@@ -26,7 +21,9 @@ import ru.javaroot.javachats.api.ChatResult;
 import ru.javaroot.javachats.api.ChatService;
 import ru.javaroot.javachats.api.ModerationResult;
 import ru.javaroot.javachats.config.RuntimeConfig;
+import ru.javaroot.javachats.integration.MetaProvider;
 import ru.javaroot.javachats.runtime.ServerScheduler;
+import ru.javaroot.javachats.utils.LogVars;
 import ru.javaroot.javachats.utils.TextUtil;
 
 import java.time.Duration;
@@ -40,8 +37,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collections;
 
-public class ChatList implements Listener, ChatService {
+public class ChatList implements ChatService {
     private final JavaChat plugin;
     private final ChatPinger pinger;
     private final ServerScheduler scheduler;
@@ -61,24 +59,16 @@ public class ChatList implements Listener, ChatService {
         this.scheduler = scheduler;
     }
 
-    @EventHandler
-    public void onChat(AsyncChatEvent event) {
-        if (event.isCancelled()) {
-            return;
-        }
-
-        UUID uuid = event.getPlayer().getUniqueId();
-        String message = PlainTextComponentSerializer.plainText().serialize(event.message()).trim();
+    public boolean handleChat(Player player, String message) {
+        UUID uuid = player.getUniqueId();
         if (message.isEmpty()) {
-            event.setCancelled(true);
-            return;
+            return true;
         }
 
         RuntimeConfig cfg = plugin.getRuntimeConfig();
         if (cfg.antiRepeat() && message.equalsIgnoreCase(lastMessages.getOrDefault(uuid, ""))) {
-            event.setCancelled(true);
             send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("anti-repeat")));
-            return;
+            return true;
         }
 
         long now = System.currentTimeMillis();
@@ -86,9 +76,8 @@ public class ChatList implements Listener, ChatService {
             long lastTime = lastMsgTime.getOrDefault(uuid, 0L);
             if (cfg.antiSpam().delayMs() >= 0 && lastTime > 0
                     && now - lastTime < cfg.antiSpam().delayMs()) {
-                event.setCancelled(true);
                 triggerSpamPunish(uuid);
-                return;
+                return true;
             }
             lastMsgTime.put(uuid, now);
         }
@@ -98,38 +87,37 @@ public class ChatList implements Listener, ChatService {
         ChatChannel channel = global ? ChatChannel.GLOBAL : ChatChannel.LOCAL;
         RuntimeConfig.Channel channelConfig = cfg.channel(channel);
         if (!channelConfig.enabled()) {
-            return;
+            return false;
         }
 
         String permission = channelConfig.sendingPermission();
-        if (permission != null && !permission.isEmpty() && !event.getPlayer().hasPermission(permission)) {
-            event.setCancelled(true);
+        if (permission != null && !permission.isEmpty() && !player.hasPermission(permission)) {
             send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("messages.no-permission")));
-            return;
+            return true;
         }
 
         Map<UUID, Long> channelTimes = global ? lastGlobalTime : lastLocalTime;
         long lastChannelTime = channelTimes.getOrDefault(uuid, 0L);
         if (channelConfig.cooldownSeconds() >= 0 && lastChannelTime > 0
                 && now - lastChannelTime < channelConfig.cooldownSeconds() * 1000L) {
-            event.setCancelled(true);
             send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("messages.cooldown")));
-            return;
+            return true;
         }
         channelTimes.put(uuid, now);
 
         if (global) {
             message = message.substring(globalSymbol.length()).trim();
             if (message.isEmpty()) {
-                event.setCancelled(true);
-                return;
+                return true;
             }
         }
 
-        event.setCancelled(true);
-        ChatRequest request = new ChatRequest(uuid, event.getPlayer().getName(), channel, message);
-        plugin.getAiMod().handleMsg(request.senderName(), request.message());
+        ChatRequest request = new ChatRequest(uuid, player.getName(), channel, message);
+        if (plugin.getAiMod() != null) {
+            plugin.getAiMod().handleMsg(request.senderName(), request.message());
+        }
         publish(request);
+        return true;
     }
 
     @Override
@@ -171,7 +159,7 @@ public class ChatList implements Listener, ChatService {
 
     @Override
     public List<ChatFilter> filters() {
-        return List.copyOf(filters);
+        return Collections.unmodifiableList(new java.util.ArrayList<ChatFilter>(filters));
     }
 
     private CompletionStage<FilterState> applyFilter(FilterState state, ChatFilter filter) {
@@ -194,13 +182,19 @@ public class ChatList implements Listener, ChatService {
                 return new FilterState(state.request(), ChatResult.unavailable(state.request(),
                         error == null ? "filter returned null" : error.getMessage()));
             }
-            return switch (value.action()) {
-                case ALLOW -> state;
-                case BLOCK -> new FilterState(state.request(), ChatResult.blocked(state.request(), value.reason()));
-                case REPLACE -> new FilterState(
-                        new ChatRequest(state.request().senderId(), state.request().senderName(),
-                                state.request().channel(), value.message()), null);
-            };
+            switch (value.action()) {
+                case ALLOW:
+                    return state;
+                case BLOCK:
+                    return new FilterState(state.request(), ChatResult.blocked(state.request(), value.reason()));
+                case REPLACE:
+                    return new FilterState(
+                            new ChatRequest(state.request().senderId(), state.request().senderName(),
+                                    state.request().channel(), value.message()), null);
+                default:
+                    return new FilterState(state.request(), ChatResult.unavailable(state.request(),
+                            "unknown filter action"));
+            }
         });
     }
 
@@ -234,7 +228,7 @@ public class ChatList implements Listener, ChatService {
         if (isCaps(request.message())) {
             sender.getWorld().strikeLightningEffect(sender.getLocation());
             RuntimeConfig.AntiCaps antiCaps = cfg.antiCaps();
-            Title.Times times = Title.Times.times(
+            Title.Times times = TextUtil.titleTimes(
                     Duration.ofMillis(antiCaps.fadeInMs()),
                     Duration.ofMillis(antiCaps.stayMs()),
                     Duration.ofMillis(antiCaps.fadeOutMs()));
@@ -242,17 +236,9 @@ public class ChatList implements Listener, ChatService {
                     Component.empty(), times));
         }
 
-        String prefix = "";
-        String suffix = "";
-        if (plugin.getLuckPerms() != null) {
-            User user = plugin.getLuckPerms().getUserManager().getUser(request.senderId());
-            if (user != null) {
-                prefix = user.getCachedData().getMetaData().getPrefix();
-                suffix = user.getCachedData().getMetaData().getSuffix();
-            }
-        }
-        prefix = prefix == null ? "" : prefix;
-        suffix = suffix == null ? "" : suffix;
+        MetaProvider meta = plugin.getMetaProvider();
+        String prefix = meta == null ? "" : meta.prefix(request.senderId());
+        String suffix = meta == null ? "" : meta.suffix(request.senderId());
 
         int playerIndex = format.indexOf("%player%");
         if (playerIndex < 0) {
@@ -298,7 +284,7 @@ public class ChatList implements Listener, ChatService {
             if (censored) {
                 loggedMessage += cfg.censorSuffix() == null ? "" : cfg.censorSuffix();
             }
-            plugin.getChatLogger().log(request.channel().name().toLowerCase(Locale.ROOT), Map.of(
+            plugin.getChatLogger().log(request.channel().name().toLowerCase(Locale.ROOT), LogVars.of(
                     "player", sender.getName(),
                     "original", originalMessage,
                     "message", loggedMessage));
@@ -346,7 +332,7 @@ public class ChatList implements Listener, ChatService {
                     return;
                 }
                 player.getWorld().strikeLightningEffect(player.getLocation());
-                Title.Times times = Title.Times.times(
+                Title.Times times = TextUtil.titleTimes(
                         Duration.ofMillis(cfg.fadeInMs()),
                         Duration.ofMillis(cfg.stayMs()),
                         Duration.ofMillis(cfg.fadeOutMs()));
@@ -392,6 +378,21 @@ public class ChatList implements Listener, ChatService {
         lastMessages.clear();
     }
 
-    private record FilterState(ChatRequest request, ChatResult result) {
+    private static final class FilterState {
+        private final ChatRequest request;
+        private final ChatResult result;
+
+        private FilterState(ChatRequest request, ChatResult result) {
+            this.request = request;
+            this.result = result;
+        }
+
+        private ChatRequest request() {
+            return request;
+        }
+
+        private ChatResult result() {
+            return result;
+        }
     }
 }

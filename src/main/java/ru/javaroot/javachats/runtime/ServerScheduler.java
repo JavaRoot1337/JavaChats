@@ -1,19 +1,20 @@
 package ru.javaroot.javachats.runtime;
 
-import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.Bukkit;
 import org.bukkit.Server;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
-public class ServerScheduler implements AutoCloseable {
+public final class ServerScheduler implements AutoCloseable {
     private final Plugin plugin;
     private final Server server;
-    private final Set<ScheduledTask> tasks = ConcurrentHashMap.newKeySet();
+    private final Set<BukkitTask> tasks = ConcurrentHashMap.newKeySet();
 
     public ServerScheduler(Plugin plugin) {
         this.plugin = plugin;
@@ -21,38 +22,49 @@ public class ServerScheduler implements AutoCloseable {
     }
 
     public void runServer(Runnable action) {
-        server.getGlobalRegionScheduler().execute(plugin, action);
+        track(server.getScheduler().runTask(plugin, action));
     }
 
-    public ScheduledTask runServerLater(Runnable action, long delayTicks) {
-        return track(server.getGlobalRegionScheduler().runDelayed(plugin, ignored -> action.run(), delayTicks));
+    public BukkitTask runServerLater(Runnable action, long delayTicks) {
+        return track(server.getScheduler().runTaskLater(plugin, action, Math.max(0L, delayTicks)));
     }
 
-    public ScheduledTask runAsync(Runnable action) {
-        return track(server.getAsyncScheduler().runNow(plugin, ignored -> action.run()));
+    public BukkitTask runAsync(Runnable action) {
+        return track(server.getScheduler().runTaskAsynchronously(plugin, action));
     }
 
-    public ScheduledTask runAsyncRepeating(Runnable action, long initialDelay, long period, TimeUnit unit) {
-        return track(server.getAsyncScheduler().runAtFixedRate(plugin, ignored -> action.run(), initialDelay, period, unit));
+    public BukkitTask runAsyncRepeating(Runnable action, long initialDelayTicks, long period, TimeUnit unit) {
+        long periodTicks = Math.max(1L, unit.toMillis(period) / 50L);
+        return track(server.getScheduler().runTaskTimerAsynchronously(plugin, action,
+                Math.max(0L, initialDelayTicks), periodTicks));
     }
 
     public boolean runForPlayer(UUID playerId, Runnable action) {
-        Player player = server.getPlayer(playerId);
-        return player != null && player.getScheduler().execute(plugin, action, null, 1L);
+        Player player = Bukkit.getPlayer(playerId);
+        if (player == null || !player.isOnline()) {
+            return false;
+        }
+        runServer(() -> {
+            Player current = Bukkit.getPlayer(playerId);
+            if (current != null && current.isOnline()) {
+                action.run();
+            }
+        });
+        return true;
     }
 
-    private ScheduledTask track(ScheduledTask task) {
+    private BukkitTask track(BukkitTask task) {
         tasks.add(task);
         return task;
     }
 
     @Override
     public void close() {
-        for (ScheduledTask task : tasks) {
+        for (BukkitTask task : tasks) {
             task.cancel();
         }
         tasks.clear();
-        server.getAsyncScheduler().cancelTasks(plugin);
-        server.getGlobalRegionScheduler().cancelTasks(plugin);
+        server.getScheduler().cancelTasks(plugin);
     }
 }
+

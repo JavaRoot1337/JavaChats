@@ -2,6 +2,8 @@ package ru.javaroot.javachats.utils;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.title.Title;
+import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -19,7 +21,7 @@ public class TextUtil {
         if (s == null)
             return Component.empty();
         Matcher matcher = HEX_PATTERN.matcher(s);
-        StringBuilder sb = new StringBuilder();
+        StringBuffer sb = new StringBuffer();
         while (matcher.find()) {
             String hex = matcher.group(1);
             matcher.appendReplacement(sb, "§x§" + hex.charAt(0) + "§" + hex.charAt(1) + "§" + hex.charAt(2) + "§"
@@ -27,6 +29,32 @@ public class TextUtil {
         }
         matcher.appendTail(sb);
         return SERIALIZER.deserialize(AMPERSAND_CODE_PATTERN.matcher(sb.toString()).replaceAll("§$1"));
+    }
+
+    public static String plain(Component component) {
+        if (component == null) {
+            return "";
+        }
+        return COLOR_CODE_PATTERN.matcher(SERIALIZER.serialize(component)).replaceAll("");
+    }
+
+    public static Title.Times titleTimes(final Duration fadeIn, final Duration stay, final Duration fadeOut) {
+        return new Title.Times() {
+            @Override
+            public Duration fadeIn() {
+                return fadeIn;
+            }
+
+            @Override
+            public Duration stay() {
+                return stay;
+            }
+
+            @Override
+            public Duration fadeOut() {
+                return fadeOut;
+            }
+        };
     }
 
     public static String getColors(String s) {

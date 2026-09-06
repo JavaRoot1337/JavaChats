@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'com.gradleup.shadow' version '9.2.2'
 }
 
 group = 'ru.javaroot'
@@ -21,16 +22,18 @@ java {
 }
 
 dependencies {
-    compileOnly 'io.papermc.paper:paper-api:26.2.build.121-stable'
+    compileOnly 'com.destroystokyo.paper:paper-api:1.16.5-R0.1-SNAPSHOT'
     compileOnly 'net.luckperms:api:5.4'
+    implementation 'com.google.code.gson:gson:2.8.9'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
-    testImplementation 'io.papermc.paper:paper-api:26.2.build.121-stable'
+    testImplementation 'com.destroystokyo.paper:paper-api:1.16.5-R0.1-SNAPSHOT'
+    testImplementation 'net.luckperms:api:5.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.release = 25
+    options.release = 8
     options.encoding = 'UTF-8'
     options.compilerArgs += ['-Xlint:all']
 }
@@ -60,5 +63,45 @@ tasks.check {
 }
 
 tasks.jar {
+    enabled = false
     archiveBaseName = 'JavaChats'
+}
+
+configurations {
+    modernPaperApi
+}
+
+def modernPaperApiVersion = providers.gradleProperty('modernPaperApiVersion')
+        .orElse('26.2.build.121-stable')
+
+dependencies {
+    modernPaperApi "io.papermc.paper:paper-api:${modernPaperApiVersion.get()}"
+    modernPaperApi 'net.luckperms:api:5.4'
+    modernPaperApi 'com.google.code.gson:gson:2.8.9'
+}
+
+tasks.register('compileModernJava', JavaCompile) {
+    description = 'Compiles the plugin sources against the modern Paper API.'
+    group = 'verification'
+    source = sourceSets.main.java
+    classpath = configurations.modernPaperApi
+    destinationDirectory = layout.buildDirectory.dir('classes/java/modern')
+    options.release = 8
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-Xlint:all']
+}
+
+tasks.check {
+    dependsOn tasks.compileModernJava
+}
+
+tasks.shadowJar {
+    archiveBaseName = 'JavaChats'
+    archiveClassifier = ''
+    relocate 'com.google.gson', 'ru.javaroot.libs.gson'
+    mergeServiceFiles()
+}
+
+tasks.build {
+    dependsOn tasks.shadowJar
 }

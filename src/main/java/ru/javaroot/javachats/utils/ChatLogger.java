@@ -40,14 +40,14 @@ public class ChatLogger {
             fileFormat = DateTimeFormatter.ofPattern(plugin.getConfig().getString("logs.chat.file-name-pattern"));
             timeFormat = DateTimeFormatter.ofPattern(plugin.getConfig().getString("logs.chat.time-pattern"));
         } catch (IllegalArgumentException | NullPointerException ex) {
-            plugin.getLogs().warning("chat-file-pattern", Map.of("error", String.valueOf(ex.getMessage())));
+            plugin.getLogs().warning("chat-file-pattern", LogVars.of("error", String.valueOf(ex.getMessage())));
             return;
         }
 
         String folderName = plugin.getConfig().getString("logs.chat.folder");
         String extension = plugin.getConfig().getString("logs.chat.file-extension");
         if (folderName == null || folderName.isEmpty() || extension == null) {
-            plugin.getLogs().warning("chat-file-config", Map.of(
+            plugin.getLogs().warning("chat-file-config", LogVars.of(
                     "folder", String.valueOf(folderName),
                     "extension", String.valueOf(extension)));
             return;
@@ -58,10 +58,10 @@ public class ChatLogger {
             Files.createDirectories(folder.toPath());
             String fileName = fileFormat.format(LocalDateTime.now()) + extension;
             logFile = folder.toPath().resolve(fileName);
-            writer = Executors.newSingleThreadExecutor(Thread.ofVirtual().factory());
-            log("startup", Map.of());
+            writer = Executors.newSingleThreadExecutor();
+            log("startup", LogVars.of());
         } catch (IOException ex) {
-            plugin.getLogs().warning("chat-file-create", Map.of("error", String.valueOf(ex.getMessage())));
+            plugin.getLogs().warning("chat-file-create", LogVars.of("error", String.valueOf(ex.getMessage())));
         }
     }
 
@@ -73,7 +73,7 @@ public class ChatLogger {
         if (message == null || message.isEmpty()) {
             return;
         }
-        String line = plugin.getLogs().render("logs.chat.line-format", Map.of(
+        String line = plugin.getLogs().render("logs.chat.line-format", LogVars.of(
                 "time", timeFormat.format(LocalDateTime.now()),
                 "message", message));
         if (line == null) {
@@ -89,10 +89,10 @@ public class ChatLogger {
 
     private void writeLine(Path file, String line) {
         try {
-            Files.writeString(file, line + System.lineSeparator(), StandardCharsets.UTF_8,
+            Files.write(file, (line + System.lineSeparator()).getBytes(StandardCharsets.UTF_8),
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException ex) {
-            plugin.getLogger().warning("Не удалось записать лог чата: " + ex.getMessage());
+            plugin.getLogs().warning("chat-file-write", LogVars.of("error", String.valueOf(ex.getMessage())));
         }
     }
 

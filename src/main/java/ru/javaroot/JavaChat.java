@@ -1,6 +1,5 @@
 package ru.javaroot;
 
-import net.luckperms.api.LuckPerms;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -13,23 +12,26 @@ import ru.javaroot.javachats.command.AiHelperCmd;
 import ru.javaroot.javachats.command.GlavCmd;
 import ru.javaroot.javachats.command.MsgCmd;
 import ru.javaroot.javachats.listener.ChatList;
+import ru.javaroot.javachats.listener.ChatEventList;
 import ru.javaroot.javachats.listener.ConnectionList;
+import ru.javaroot.javachats.integration.IntegrationLoader;
+import ru.javaroot.javachats.integration.MetaProvider;
 import ru.javaroot.javachats.utils.ChatLogger;
 import ru.javaroot.javachats.utils.LogCfg;
 import ru.javaroot.javachats.config.MessageSnapshot;
 import ru.javaroot.javachats.config.RuntimeConfig;
 import ru.javaroot.javachats.runtime.ServerScheduler;
 import ru.javaroot.javachats.service.PrivateMessages;
+import ru.javaroot.javachats.utils.LogVars;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 
 public class JavaChat extends JavaPlugin {
-    private LuckPerms luckPerms;
+    private MetaProvider metaProvider;
     private FileConfiguration messageConfig;
     private AiMod aiMod;
     private ChatLogger chatLogger;
@@ -48,10 +50,8 @@ public class JavaChat extends JavaPlugin {
         logs = new LogCfg(this);
         scheduler = new ServerScheduler(this);
 
-        var provider = Bukkit.getServicesManager().getRegistration(LuckPerms.class);
-        if (provider != null) {
-            luckPerms = provider.getProvider();
-        }
+        org.bukkit.plugin.PluginManager pm = getServer().getPluginManager();
+        metaProvider = IntegrationLoader.loadLuckPerms();
 
         aiMod = new AiMod(this, scheduler);
         chatList = new ChatList(this, scheduler);
@@ -85,8 +85,7 @@ public class JavaChat extends JavaPlugin {
 
         registerCommands();
 
-        var pm = getServer().getPluginManager();
-        pm.registerEvents(chatList, this);
+        pm.registerEvents(new ChatEventList(chatList), this);
         pm.registerEvents(new ConnectionList(this, chatList), this);
     }
 
@@ -130,14 +129,14 @@ public class JavaChat extends JavaPlugin {
     private void loadConfigDefaults() {
         try (InputStream stream = getResource("config.yml")) {
             if (stream == null) {
-                logs.warning("config-resource-missing", Map.of("resource", "config.yml"));
+                logs.warning("config-resource-missing", LogVars.of("resource", "config.yml"));
                 return;
             }
             FileConfiguration defaults = YamlConfiguration.loadConfiguration(
                     new InputStreamReader(stream, StandardCharsets.UTF_8));
             getConfig().addDefaults(defaults);
         } catch (IOException e) {
-            logs.warning("config-defaults-load", Map.of(
+            logs.warning("config-defaults-load", LogVars.of(
                     "resource", "config.yml",
                     "error", String.valueOf(e.getMessage())));
         }
@@ -193,8 +192,8 @@ public class JavaChat extends JavaPlugin {
         return privateMessages;
     }
 
-    public LuckPerms getLuckPerms() {
-        return luckPerms;
+    public MetaProvider getMetaProvider() {
+        return metaProvider;
     }
 
     public AiMod getAiMod() {

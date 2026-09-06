@@ -9,6 +9,7 @@ import ru.javaroot.javachats.api.PrivateMessageResult;
 import ru.javaroot.javachats.api.PrivateMessageService;
 import ru.javaroot.javachats.runtime.ServerScheduler;
 import ru.javaroot.javachats.utils.TextUtil;
+import ru.javaroot.javachats.utils.LogVars;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -45,7 +46,7 @@ public class PrivateMessages implements PrivateMessageService {
             sender.sendMessage(toSender);
             recipient.sendMessage(toRecipient);
             if (plugin.getChatLogger() != null) {
-                plugin.getChatLogger().log("private", Map.of(
+                plugin.getChatLogger().log("private", LogVars.of(
                         "sender", sender.getName(),
                         "target", recipient.getName(),
                         "message", request.message()));

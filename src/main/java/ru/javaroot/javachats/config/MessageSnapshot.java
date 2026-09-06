@@ -2,24 +2,39 @@ package ru.javaroot.javachats.config;
 
 import org.bukkit.configuration.file.FileConfiguration;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public record MessageSnapshot(Map<String, String> values, Map<String, List<String>> lists) {
-    private static final List<String> TEXT_PATHS = List.of(
+public final class MessageSnapshot {
+    private static final List<String> TEXT_PATHS = Collections.unmodifiableList(Arrays.asList(
             "chat.local", "chat.global", "messages.reload", "messages.no-permission", "messages.cooldown",
             "messages.no-player", "messages.only-players", "messages.usage-javachats", "messages.usage-msg",
             "messages.cannot-msg-self", "pm.sender", "pm.receiver", "pm.hover", "ping.highlight.target",
             "ping.highlight.others", "ping.title.text", "ping.title.sub-text", "anti-caps.title",
             "anti-spam.subtitle", "anti-repeat", "ai-helper.log-message", "ai-helper.log-result",
             "ai-helper.verdict-punished", "ai-helper.verdict-clean", "ai-helper.error", "ai-helper.subtitle",
-            "ai-helper.added-message", "ai-helper.already-added", "ai-helper.disabled", "ai-helper.usage-aihelper");
+            "ai-helper.added-message", "ai-helper.already-added", "ai-helper.disabled", "ai-helper.usage-aihelper"));
+    private static final List<String> LIST_PATHS = Collections.unmodifiableList(
+            Arrays.asList("join-quit.join", "join-quit.quit"));
 
-    private static final List<String> LIST_PATHS = List.of("join-quit.join", "join-quit.quit");
+    private final Map<String, String> values;
+    private final Map<String, List<String>> lists;
+
+    public MessageSnapshot(Map<String, String> values, Map<String, List<String>> lists) {
+        this.values = Collections.unmodifiableMap(new HashMap<String, String>(values));
+        Map<String, List<String>> copied = new HashMap<String, List<String>>();
+        for (Map.Entry<String, List<String>> entry : lists.entrySet()) {
+            copied.put(entry.getKey(), Collections.unmodifiableList(
+                    new java.util.ArrayList<String>(entry.getValue())));
+        }
+        this.lists = Collections.unmodifiableMap(copied);
+    }
 
     public static MessageSnapshot from(FileConfiguration source) {
-        Map<String, String> values = new HashMap<>();
+        Map<String, String> values = new HashMap<String, String>();
         for (String path : TEXT_PATHS) {
             String value = source.getString(path);
             if (value != null) {
@@ -27,18 +42,20 @@ public record MessageSnapshot(Map<String, String> values, Map<String, List<Strin
             }
         }
 
-        Map<String, List<String>> lists = new HashMap<>();
+        Map<String, List<String>> lists = new HashMap<String, List<String>>();
         for (String path : LIST_PATHS) {
-            lists.put(path, List.copyOf(source.getStringList(path)));
+            lists.put(path, Collections.unmodifiableList(source.getStringList(path)));
         }
-        return new MessageSnapshot(Map.copyOf(values), Map.copyOf(lists));
+        return new MessageSnapshot(values, lists);
     }
 
-    public String text(String path) {
-        return values.get(path);
-    }
+    public Map<String, String> values() { return values; }
+    public Map<String, List<String>> lists() { return lists; }
+
+    public String text(String path) { return values.get(path); }
 
     public List<String> list(String path) {
-        return lists.getOrDefault(path, List.of());
+        List<String> result = lists.get(path);
+        return result == null ? Collections.<String>emptyList() : result;
     }
 }

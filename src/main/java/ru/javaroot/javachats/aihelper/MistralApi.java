@@ -6,32 +6,23 @@ import com.google.gson.JsonObject;
 import ru.javaroot.JavaChat;
 import ru.javaroot.javachats.config.RuntimeConfig;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
-public class MistralApi implements AutoCloseable {
+public final class MistralApi implements AutoCloseable {
     private final JavaChat plugin;
-    private final HttpClient http;
+    private final HttpAiClient http;
     private final Gson gson = new Gson();
     private final String key;
-    private final URI endpoint;
     private final String model;
-    private final Duration timeout;
 
     public MistralApi(JavaChat plugin, String key, String endpoint, String model, long timeoutSeconds) {
         this.plugin = plugin;
         this.key = key;
-        this.endpoint = URI.create(endpoint);
         this.model = model;
-        this.timeout = Duration.ofSeconds(timeoutSeconds);
-        this.http = HttpClient.newBuilder().connectTimeout(timeout).build();
+        this.http = new HttpAiClient(plugin, key, endpoint, timeoutSeconds, "mistral");
     }
 
     public MistralApi(JavaChat plugin, RuntimeConfig.Provider provider) {
@@ -62,12 +53,10 @@ public class MistralApi implements AutoCloseable {
         String context = rules.values().stream()
                 .map(rule -> "- " + rule.id + ": " + rule.description)
                 .collect(Collectors.joining("\n"));
-        String exPlus = buildExamples("Примеры сообщений, которые НЕ нарушают правила:", plus);
-        String exMinus = buildExamples("Примеры сообщений, которые НАРУШАЮТ правила:", minus);
         String prompt = systemPrompt
                 .replace("%rules%", context)
-                .replace("%examples_plus%", exPlus)
-                .replace("%examples_minus%", exMinus);
+                .replace("%examples_plus%", buildExamples("Примеры сообщений, которые НЕ нарушают правила:", plus))
+                .replace("%examples_minus%", buildExamples("Примеры сообщений, которые НАРУШАЮТ правила:", minus));
 
         JsonArray messages = new JsonArray();
         messages.add(message("system", prompt));
@@ -79,34 +68,23 @@ public class MistralApi implements AutoCloseable {
         body.addProperty("temperature", config.temperature());
         body.add("response_format", gson.fromJson("{\"type\":\"json_object\"}", JsonObject.class));
 
-        HttpRequest request = HttpRequest.newBuilder(endpoint)
-                .timeout(timeout)
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + key)
-                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
-                .build();
+        return http.post(gson.toJson(body)).thenApply(response -> parse(response));
+    }
 
-        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenApply(response -> {
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                plugin.getLogs().warning("mistral-http", Map.of(
-                        "status", String.valueOf(response.statusCode())));
-                return null;
-            }
-            try {
-                JsonObject json = gson.fromJson(response.body(), JsonObject.class);
-                String content = json.getAsJsonArray("choices").get(0).getAsJsonObject()
-                        .getAsJsonObject("message").get("content").getAsString();
-                return gson.fromJson(content, AiResult.class);
-            } catch (RuntimeException ex) {
-                plugin.getLogs().warning("mistral-parse", Map.of(
-                        "error", String.valueOf(ex.getMessage())));
-                return null;
-            }
-        }).exceptionally(error -> {
-            plugin.getLogs().warning("mistral-request", Map.of(
-                    "error", String.valueOf(error.getMessage())));
+    private AiResult parse(String response) {
+        if (response == null) {
             return null;
-        });
+        }
+        try {
+            JsonObject json = gson.fromJson(response, JsonObject.class);
+            String content = json.getAsJsonArray("choices").get(0).getAsJsonObject()
+                    .getAsJsonObject("message").get("content").getAsString();
+            return gson.fromJson(content, AiResult.class);
+        } catch (RuntimeException ex) {
+            plugin.getLogs().warning("mistral-parse", ru.javaroot.javachats.utils.LogVars.of(
+                    "error", String.valueOf(ex.getMessage())));
+            return null;
+        }
     }
 
     private JsonObject message(String role, String content) {
@@ -132,10 +110,11 @@ public class MistralApi implements AutoCloseable {
         http.close();
     }
 
-    public static class AiResult {
+    public static final class AiResult {
         public boolean violation;
         public String rule;
         public double probability;
         public List<String> bad_words;
     }
 }
+

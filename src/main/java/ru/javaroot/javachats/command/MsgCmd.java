@@ -20,10 +20,11 @@ public class MsgCmd implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player p)) {
+        if (!(sender instanceof Player)) {
             sender.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text("messages.only-players")));
             return true;
         }
+        Player p = (Player) sender;
         if (args.length < 2) {
             p.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text("messages.usage-msg")));
             return true;

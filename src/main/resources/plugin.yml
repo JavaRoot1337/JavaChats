@@ -1,12 +1,10 @@
 name: JavaChats
 version: 1.0
 main: ru.javaroot.JavaChat
-api-version: '26.2'
+api-version: '1.16'
 description: Чаты и модерация
 authors: [JavaRoot]
 softdepend: [LuckPerms]
-libraries:
-  - net.luckperms:api:5.4
 
 commands:
   javachats:

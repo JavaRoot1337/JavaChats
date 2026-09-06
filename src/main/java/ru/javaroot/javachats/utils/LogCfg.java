@@ -2,12 +2,13 @@ package ru.javaroot.javachats.utils;
 
 import ru.javaroot.JavaChat;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 public class LogCfg {
     private final JavaChat plugin;
-    private volatile Map<String, String> values = Map.of();
+    private volatile Map<String, String> values = Collections.emptyMap();
 
     public LogCfg(JavaChat plugin) {
         this.plugin = plugin;
@@ -21,7 +22,7 @@ public class LogCfg {
                 next.put(path, value);
             }
         }
-        values = Map.copyOf(next);
+        values = Collections.unmodifiableMap(new HashMap<String, String>(next));
     }
 
     public void warning(String key, Map<String, String> vars) {

@@ -54,11 +54,11 @@ public class AiHelperCmd implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return List.of("add");
+            return java.util.Collections.singletonList("add");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("add")) {
-            return List.of("plus", "minus");
+            return java.util.Arrays.asList("plus", "minus");
         }
-        return List.of();
+        return java.util.Collections.emptyList();
     }
 }
