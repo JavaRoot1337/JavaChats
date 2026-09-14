@@ -65,7 +65,7 @@ anti-repeat:
   enable: true # вкл/выкл
 
 # ИИ хелпер
-ai-helper:
+ai-helper: #вроде как нормик, справляется, только выбирайте модель где самое маленькое время на кд между запросами - а то будет очень медленный чат
   failure-policy: allow # поведение при полном сбое ИИ: allow или block (1 - пропускает сообщение, 2 - блокирует сообщение)
   user-prompt-format: 'Сообщение: %message%' # запрос
   temperature: 0.0 # температура
@@ -88,7 +88,7 @@ ai-helper:
     mode: censor # режим
     punish-probability: 0.85 # вероятность
 
-  groq-api:
+  groq-api: #говно ебаное, не юзайте. я не знаю нахуя я 2 лишних часа своей жизни на это потратил
     enable: false # сервис
     api-key: '' # ключ
     endpoint: 'https://api.groq.com/openai/v1/chat/completions' # адрес
