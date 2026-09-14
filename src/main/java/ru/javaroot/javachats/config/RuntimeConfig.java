@@ -57,6 +57,37 @@ public final class RuntimeConfig {
     public Ai ai() { return ai; }
     public String censorSuffix() { return censorSuffix; }
 
+    public void validate() {
+        validateChannel(local, "chats.local");
+        validateChannel(global, "chats.global");
+        if (antiCaps.percent() < 0 || antiCaps.percent() > 100 || antiCaps.minLength() < 0) {
+            throw new IllegalArgumentException("invalid anti-caps settings");
+        }
+        if (antiSpam.delayMs() < 0 || antiSpam.strikes() < 0 || antiSpam.strikeDelayTicks() < 0) {
+            throw new IllegalArgumentException("invalid anti-spam settings");
+        }
+        if (ai.blockMaxQueueSize() < 1 || ai.censorTimeoutSeconds() < 0
+                || Double.isNaN(ai.temperature()) || Double.isInfinite(ai.temperature())) {
+            throw new IllegalArgumentException("invalid AI settings");
+        }
+        validateProvider(ai.mistral(), "ai-helper.mistral-api");
+        validateProvider(ai.groq(), "ai-helper.groq-api");
+    }
+
+    private static void validateChannel(Channel channel, String path) {
+        if (channel.range() < -1 || channel.cooldownSeconds() < -1
+                || channel.volume() < 0 || channel.pitch() < 0) {
+            throw new IllegalArgumentException("invalid channel settings: " + path);
+        }
+    }
+
+    private static void validateProvider(Provider provider, String path) {
+        if (provider.timeoutSeconds() < 1 || provider.cooldownSeconds() < 0
+                || provider.punishProbability() < 0 || provider.punishProbability() > 1) {
+            throw new IllegalArgumentException("invalid provider settings: " + path);
+        }
+    }
+
     public Channel channel(ChatChannel channel) {
         return channel == ChatChannel.GLOBAL ? global : local;
     }
@@ -203,6 +234,8 @@ public final class RuntimeConfig {
     }
 
     public static final class Ai {
+        public enum FailurePolicy { ALLOW, BLOCK }
+
         private final String systemPrompt;
         private final String userPromptFormat;
         private final double temperature;
@@ -212,10 +245,11 @@ public final class RuntimeConfig {
         private final CensorTitle censorTitle;
         private final Provider mistral;
         private final Provider groq;
+        private final FailurePolicy failurePolicy;
 
         private Ai(String systemPrompt, String userPromptFormat, double temperature, long censorTimeoutSeconds,
                 long blockInitialDelayTicks, int blockMaxQueueSize, CensorTitle censorTitle, Provider mistral,
-                Provider groq) {
+                Provider groq, FailurePolicy failurePolicy) {
             this.systemPrompt = systemPrompt;
             this.userPromptFormat = userPromptFormat;
             this.temperature = temperature;
@@ -225,16 +259,26 @@ public final class RuntimeConfig {
             this.censorTitle = censorTitle;
             this.mistral = mistral;
             this.groq = groq;
+            this.failurePolicy = failurePolicy;
         }
 
         private static Ai from(FileConfiguration cfg) {
+            String policy = cfg.getString("ai-helper.failure-policy");
+            FailurePolicy failurePolicy;
+            if (policy == null || policy.trim().isEmpty() || "allow".equalsIgnoreCase(policy)) {
+                failurePolicy = FailurePolicy.ALLOW;
+            } else if ("block".equalsIgnoreCase(policy)) {
+                failurePolicy = FailurePolicy.BLOCK;
+            } else {
+                throw new IllegalArgumentException("ai-helper.failure-policy must be allow or block");
+            }
             return new Ai(cfg.getString("ai-helper.system-prompt"), cfg.getString("ai-helper.user-prompt-format"),
                     cfg.getDouble("ai-helper.temperature"), cfg.getLong("ai-helper.censor-timeout-seconds"),
                     cfg.getLong("ai-helper.block.initial-delay-ticks"), cfg.getInt("ai-helper.block.max-queue-size"),
                     new CensorTitle(cfg.getLong("ai-helper.censor-title.fade-in-ms"),
                             cfg.getLong("ai-helper.censor-title.stay-ms"),
                             cfg.getLong("ai-helper.censor-title.fade-out-ms")),
-                    provider(cfg, "ai-helper.mistral-api"), provider(cfg, "ai-helper.groq-api"));
+                    provider(cfg, "ai-helper.mistral-api"), provider(cfg, "ai-helper.groq-api"), failurePolicy);
         }
 
         private static Provider provider(FileConfiguration cfg, String path) {
@@ -254,6 +298,7 @@ public final class RuntimeConfig {
         public CensorTitle censorTitle() { return censorTitle; }
         public Provider mistral() { return mistral; }
         public Provider groq() { return groq; }
+        public FailurePolicy failurePolicy() { return failurePolicy; }
     }
 
     public static final class CensorTitle {

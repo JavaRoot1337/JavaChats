@@ -10,7 +10,7 @@ import java.util.Map;
 
 public final class MessageSnapshot {
     private static final List<String> TEXT_PATHS = Collections.unmodifiableList(Arrays.asList(
-            "chat.local", "chat.global", "messages.reload", "messages.no-permission", "messages.cooldown",
+            "chat.local", "chat.global", "messages.reload", "messages.reload-failed", "messages.no-permission", "messages.cooldown",
             "messages.no-player", "messages.only-players", "messages.usage-javachats", "messages.usage-msg",
             "messages.cannot-msg-self", "pm.sender", "pm.receiver", "pm.hover", "ping.highlight.target",
             "ping.highlight.others", "ping.title.text", "ping.title.sub-text", "anti-caps.title",
@@ -53,6 +53,27 @@ public final class MessageSnapshot {
     public Map<String, List<String>> lists() { return lists; }
 
     public String text(String path) { return values.get(path); }
+
+    public void validate() {
+        String[] required = {"chat.local", "chat.global", "pm.sender", "pm.receiver",
+                "messages.no-permission", "messages.cooldown", "messages.usage-msg"};
+        for (String path : required) {
+            String value = values.get(path);
+            if (value == null || value.trim().isEmpty()) {
+                throw new IllegalArgumentException("missing message: " + path);
+            }
+        }
+        for (String path : new String[] {"chat.local", "chat.global", "pm.sender", "pm.receiver"}) {
+            String value = values.get(path);
+            if (!value.contains("%message%")) {
+                throw new IllegalArgumentException("missing %message% in: " + path);
+            }
+        }
+        if (!values.get("chat.local").contains("%player%")
+                || !values.get("chat.global").contains("%player%")) {
+            throw new IllegalArgumentException("chat format requires %player%");
+        }
+    }
 
     public List<String> list(String path) {
         List<String> result = lists.get(path);

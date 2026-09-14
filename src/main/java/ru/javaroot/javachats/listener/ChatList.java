@@ -49,10 +49,6 @@ public class ChatList implements ChatService {
     private final Map<UUID, Long> lastGlobalTime = new ConcurrentHashMap<>();
     private final Map<UUID, String> lastMessages = new ConcurrentHashMap<>();
 
-    public ChatList(JavaChat plugin) {
-        this(plugin, new ServerScheduler(plugin));
-    }
-
     public ChatList(JavaChat plugin, ServerScheduler scheduler) {
         this.plugin = plugin;
         this.pinger = new ChatPinger(plugin);
@@ -60,40 +56,61 @@ public class ChatList implements ChatService {
     }
 
     public boolean handleChat(Player player, String message) {
-        UUID uuid = player.getUniqueId();
-        if (message.isEmpty()) {
+        return handleChat(player.getUniqueId(), player.getName(), message);
+    }
+
+    public boolean handleChat(UUID uuid, String senderName, String message) {
+        if (uuid == null || senderName == null || message == null) {
+            return true;
+        }
+        if (message.trim().isEmpty() || message.length() > 4096) {
+            send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("messages.usage-msg")));
             return true;
         }
 
         RuntimeConfig cfg = plugin.getRuntimeConfig();
-        if (cfg.antiRepeat() && message.equalsIgnoreCase(lastMessages.getOrDefault(uuid, ""))) {
-            send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("anti-repeat")));
-            return true;
+        String globalSymbol = cfg.global().symbol();
+        boolean global = globalSymbol != null && !globalSymbol.isEmpty() && message.startsWith(globalSymbol);
+        ChatChannel channel = global ? ChatChannel.GLOBAL : ChatChannel.LOCAL;
+        if (!cfg.channel(channel).enabled()) {
+            return false;
         }
 
+        scheduler.runServer(() -> processChat(uuid, senderName, message, channel, globalSymbol));
+        return true;
+    }
+
+    private void processChat(UUID uuid, String senderName, String rawMessage, ChatChannel channel,
+            String globalSymbol) {
+        Player player = Bukkit.getPlayer(uuid);
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+        RuntimeConfig cfg = plugin.getRuntimeConfig();
+        String message = rawMessage;
         long now = System.currentTimeMillis();
+        boolean global = channel == ChatChannel.GLOBAL;
+
+        if (cfg.antiRepeat() && message.equalsIgnoreCase(lastMessages.getOrDefault(uuid, ""))) {
+            send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("anti-repeat")));
+            return;
+        }
+
         if (cfg.antiSpam().enabled()) {
             long lastTime = lastMsgTime.getOrDefault(uuid, 0L);
             if (cfg.antiSpam().delayMs() >= 0 && lastTime > 0
                     && now - lastTime < cfg.antiSpam().delayMs()) {
                 triggerSpamPunish(uuid);
-                return true;
+                return;
             }
             lastMsgTime.put(uuid, now);
         }
 
-        String globalSymbol = cfg.global().symbol();
-        boolean global = globalSymbol != null && !globalSymbol.isEmpty() && message.startsWith(globalSymbol);
-        ChatChannel channel = global ? ChatChannel.GLOBAL : ChatChannel.LOCAL;
         RuntimeConfig.Channel channelConfig = cfg.channel(channel);
-        if (!channelConfig.enabled()) {
-            return false;
-        }
-
         String permission = channelConfig.sendingPermission();
         if (permission != null && !permission.isEmpty() && !player.hasPermission(permission)) {
             send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("messages.no-permission")));
-            return true;
+            return;
         }
 
         Map<UUID, Long> channelTimes = global ? lastGlobalTime : lastLocalTime;
@@ -101,23 +118,19 @@ public class ChatList implements ChatService {
         if (channelConfig.cooldownSeconds() >= 0 && lastChannelTime > 0
                 && now - lastChannelTime < channelConfig.cooldownSeconds() * 1000L) {
             send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("messages.cooldown")));
-            return true;
+            return;
         }
         channelTimes.put(uuid, now);
 
         if (global) {
             message = message.substring(globalSymbol.length()).trim();
             if (message.isEmpty()) {
-                return true;
+                return;
             }
         }
 
-        ChatRequest request = new ChatRequest(uuid, player.getName(), channel, message);
-        if (plugin.getAiMod() != null) {
-            plugin.getAiMod().handleMsg(request.senderName(), request.message());
-        }
+        ChatRequest request = new ChatRequest(uuid, senderName, channel, message);
         publish(request);
-        return true;
     }
 
     @Override
@@ -199,6 +212,14 @@ public class ChatList implements ChatService {
     }
 
     private CompletionStage<ChatResult> dispatch(ChatRequest request, ModerationResult moderation) {
+        if (!moderation.available()
+                && plugin.getRuntimeConfig().ai().failurePolicy() == RuntimeConfig.Ai.FailurePolicy.BLOCK) {
+            return CompletableFuture.completedFuture(ChatResult.blocked(request, "moderation unavailable"));
+        }
+        if (moderation.violation() && moderation.blocking()) {
+            plugin.getAiMod().punish(request.senderName(), moderation);
+            return CompletableFuture.completedFuture(ChatResult.blocked(request, moderation.rule()));
+        }
         String originalMessage = request.message();
         if (moderation.violation()) {
             String message = moderation.censoredMessage().orElse(request.message());
@@ -206,23 +227,29 @@ public class ChatList implements ChatService {
         }
         ChatRequest finalRequest = request;
         CompletableFuture<ChatResult> result = new CompletableFuture<>();
-        scheduler.runServer(() -> {
-            sendChat(finalRequest, moderation.violation(), originalMessage);
-            result.complete(ChatResult.published(finalRequest, finalRequest.message()));
+        org.bukkit.scheduler.BukkitTask task = scheduler.runServer(() -> {
+            if (sendChat(finalRequest, moderation.violation(), originalMessage)) {
+                result.complete(ChatResult.published(finalRequest, finalRequest.message()));
+            } else {
+                result.complete(ChatResult.unavailable(finalRequest, "sender is offline or format is invalid"));
+            }
         });
+        if (task == null) {
+            result.complete(ChatResult.unavailable(finalRequest, "plugin is shutting down"));
+        }
         return result;
     }
 
-    private void sendChat(ChatRequest request, boolean censored, String originalMessage) {
+    private boolean sendChat(ChatRequest request, boolean censored, String originalMessage) {
         Player sender = Bukkit.getPlayer(request.senderId());
         if (sender == null || !sender.isOnline()) {
-            return;
+            return false;
         }
 
         RuntimeConfig cfg = plugin.getRuntimeConfig();
         String format = plugin.getMessageSnapshot().text("chat." + request.channel().name().toLowerCase(Locale.ROOT));
         if (format == null || format.isEmpty()) {
-            return;
+            return false;
         }
 
         if (isCaps(request.message())) {
@@ -242,7 +269,7 @@ public class ChatList implements ChatService {
 
         int playerIndex = format.indexOf("%player%");
         if (playerIndex < 0) {
-            return;
+            return false;
         }
 
         String beforePlayer = format.substring(0, playerIndex).replace("%prefix%", prefix);
@@ -255,7 +282,7 @@ public class ChatList implements ChatService {
         Component suffixComponent = TextUtil.format(messageParts[0].replace("%suffix%", suffix));
         Component tailComponent = messageParts.length < 2 ? Component.empty() : TextUtil.format(messageParts[1]);
         Component consoleMessage = prefixComponent.append(playerComponent).append(suffixComponent)
-                .append(TextUtil.format(request.message())).append(tailComponent);
+                .append(TextUtil.literal(request.message())).append(tailComponent);
 
         Set<Player> recipients = getRecipients(sender, request.channel());
         Set<Player> mentioned = pinger.getMentionedPlayers(request.message());
@@ -268,9 +295,11 @@ public class ChatList implements ChatService {
         RuntimeConfig.Channel channel = cfg.channel(request.channel());
         Sound sound = getSound(channel.sound());
         for (Player recipient : recipients) {
-            String displayed = mentioned.isEmpty() ? request.message() : pinger.processMessageFor(request.message(), recipient);
+            Component displayed = mentioned.isEmpty()
+                    ? TextUtil.literal(request.message())
+                    : pinger.processComponentFor(request.message(), recipient);
             Component fullMessage = prefixComponent.append(playerComponent).append(suffixComponent)
-                    .append(TextUtil.format(displayed)).append(tailComponent);
+                    .append(displayed).append(tailComponent);
             recipient.sendMessage(fullMessage);
             if (sound != null) {
                 recipient.playSound(recipient.getLocation(), sound, (float) channel.volume(), (float) channel.pitch());
@@ -289,6 +318,7 @@ public class ChatList implements ChatService {
                     "original", originalMessage,
                     "message", loggedMessage));
         }
+        return true;
     }
 
     private Set<Player> getRecipients(Player sender, ChatChannel channel) {

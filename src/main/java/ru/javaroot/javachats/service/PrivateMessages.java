@@ -26,7 +26,7 @@ public class PrivateMessages implements PrivateMessageService {
     @Override
     public CompletableFuture<PrivateMessageResult> send(PrivateMessageRequest request) {
         CompletableFuture<PrivateMessageResult> result = new CompletableFuture<>();
-        scheduler.runServer(() -> {
+        org.bukkit.scheduler.BukkitTask task = scheduler.runServer(() -> {
             Player sender = Bukkit.getPlayer(request.senderId());
             Player recipient = Bukkit.getPlayer(request.recipientId());
             if (sender == null || !sender.isOnline() || recipient == null || !recipient.isOnline()) {
@@ -37,12 +37,10 @@ public class PrivateMessages implements PrivateMessageService {
 
             String senderFormat = plugin.getMessageSnapshot().text("pm.sender");
             String recipientFormat = plugin.getMessageSnapshot().text("pm.receiver");
-            Component toSender = TextUtil.format(senderFormat
-                    .replace("%player%", recipient.getName())
-                    .replace("%message%", request.message()));
-            Component toRecipient = TextUtil.format(recipientFormat
-                    .replace("%player%", sender.getName())
-                    .replace("%message%", request.message()));
+            Component toSender = TextUtil.formatTemplate(
+                    senderFormat.replace("%player%", recipient.getName()), request.message());
+            Component toRecipient = TextUtil.formatTemplate(
+                    recipientFormat.replace("%player%", sender.getName()), request.message());
             sender.sendMessage(toSender);
             recipient.sendMessage(toRecipient);
             if (plugin.getChatLogger() != null) {
@@ -53,6 +51,10 @@ public class PrivateMessages implements PrivateMessageService {
             }
             result.complete(new PrivateMessageResult(PrivateMessageResult.Status.SENT, request, null));
         });
+        if (task == null) {
+            result.complete(new PrivateMessageResult(PrivateMessageResult.Status.UNAVAILABLE, request,
+                    "plugin is shutting down"));
+        }
         return result;
     }
 }

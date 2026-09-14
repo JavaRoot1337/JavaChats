@@ -12,7 +12,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class ChatLogger {
@@ -54,11 +56,22 @@ public class ChatLogger {
         }
 
         try {
-            File folder = new File(plugin.getDataFolder(), folderName);
-            Files.createDirectories(folder.toPath());
+            Path dataFolder = plugin.getDataFolder().toPath().toAbsolutePath().normalize();
+            Path folder = dataFolder.resolve(folderName).normalize();
+            if (!folder.startsWith(dataFolder) || extension.indexOf('/') >= 0 || extension.indexOf('\\') >= 0) {
+                plugin.getLogs().warning("chat-file-config", LogVars.of(
+                        "folder", folderName, "extension", extension));
+                return;
+            }
+            Files.createDirectories(folder);
             String fileName = fileFormat.format(LocalDateTime.now()) + extension;
-            logFile = folder.toPath().resolve(fileName);
-            writer = Executors.newSingleThreadExecutor();
+            logFile = folder.resolve(fileName).normalize();
+            writer = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<Runnable>(256), runnable -> {
+                        Thread thread = new Thread(runnable, "JavaChats-chat-log");
+                        thread.setDaemon(true);
+                        return thread;
+                    }, new ThreadPoolExecutor.AbortPolicy());
             log("startup", LogVars.of());
         } catch (IOException ex) {
             plugin.getLogs().warning("chat-file-create", LogVars.of("error", String.valueOf(ex.getMessage())));
@@ -84,7 +97,11 @@ public class ChatLogger {
             return;
         }
         Path currentFile = logFile;
-        currentWriter.execute(() -> writeLine(currentFile, line));
+        try {
+            currentWriter.execute(() -> writeLine(currentFile, line));
+        } catch (RejectedExecutionException ignored) {
+            plugin.getLogs().warning("chat-file-write", LogVars.of("error", "log queue is full"));
+        }
     }
 
     private void writeLine(Path file, String line) {

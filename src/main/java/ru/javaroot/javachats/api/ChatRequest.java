@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 public final class ChatRequest {
+    private static final int MAX_MESSAGE_LENGTH = 4096;
     private final UUID senderId;
     private final String senderName;
     private final ChatChannel channel;
@@ -14,6 +15,9 @@ public final class ChatRequest {
         this.senderName = cleanText(senderName, "senderName");
         this.channel = Objects.requireNonNull(channel, "channel");
         this.message = cleanText(message, "message");
+        if (this.message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message is too long");
+        }
     }
 
     public UUID senderId() { return senderId; }

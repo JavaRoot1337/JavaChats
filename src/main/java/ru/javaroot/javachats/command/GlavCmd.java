@@ -21,8 +21,9 @@ public class GlavCmd implements CommandExecutor {
         }
 
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
-            plugin.reloadConfigs();
-            sender.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text("messages.reload")));
+            boolean reloaded = plugin.reloadConfigs();
+            String path = reloaded ? "messages.reload" : "messages.reload-failed";
+            sender.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text(path)));
             return true;
         }
 

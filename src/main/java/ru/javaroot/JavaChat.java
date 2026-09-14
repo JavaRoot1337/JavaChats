@@ -32,7 +32,6 @@ import java.nio.charset.StandardCharsets;
 
 public class JavaChat extends JavaPlugin {
     private MetaProvider metaProvider;
-    private FileConfiguration messageConfig;
     private AiMod aiMod;
     private ChatLogger chatLogger;
     private ChatList chatList;
@@ -48,6 +47,7 @@ public class JavaChat extends JavaPlugin {
         saveDefaultConfig();
         saveDefaultMessageConfig();
         logs = new LogCfg(this);
+        logs.reload();
         scheduler = new ServerScheduler(this);
 
         org.bukkit.plugin.PluginManager pm = getServer().getPluginManager();
@@ -56,7 +56,10 @@ public class JavaChat extends JavaPlugin {
         aiMod = new AiMod(this, scheduler);
         chatList = new ChatList(this, scheduler);
         privateMessages = new PrivateMessages(this, scheduler);
-        reloadConfigs();
+        if (!reloadConfigs()) {
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
         api = new JavaChatsApi() {
             @Override
             public String apiVersion() {
@@ -107,23 +110,32 @@ public class JavaChat extends JavaPlugin {
         api = null;
     }
 
-    public void reloadConfigs() {
+    public boolean reloadConfigs() {
         reloadConfig();
         loadConfigDefaults();
-        logs.reload();
         File messageFile = new File(getDataFolder(), "message.yml");
-        FileConfiguration newMessageConfig = YamlConfiguration.loadConfiguration(messageFile);
-        RuntimeConfig newRuntimeConfig = RuntimeConfig.from(getConfig());
-        MessageSnapshot newMessageSnapshot = MessageSnapshot.from(newMessageConfig);
-        messageConfig = newMessageConfig;
+        RuntimeConfig newRuntimeConfig;
+        MessageSnapshot newMessageSnapshot;
+        try {
+            FileConfiguration newMessageConfig = YamlConfiguration.loadConfiguration(messageFile);
+            newRuntimeConfig = RuntimeConfig.from(getConfig());
+            newMessageSnapshot = MessageSnapshot.from(newMessageConfig);
+            newRuntimeConfig.validate();
+            newMessageSnapshot.validate();
+        } catch (RuntimeException error) {
+            logs.warning("config-validation", LogVars.of("error", String.valueOf(error.getMessage())));
+            return false;
+        }
         runtimeConfig = newRuntimeConfig;
         messageSnapshot = newMessageSnapshot;
+        logs.reload();
         if (aiMod != null) {
             aiMod.reload();
         }
         if (chatLogger != null) {
             chatLogger.reload();
         }
+        return true;
     }
 
     private void loadConfigDefaults() {
@@ -166,10 +178,6 @@ public class JavaChat extends JavaPlugin {
         if (!file.exists()) {
             saveResource("message.yml", false);
         }
-    }
-
-    public FileConfiguration getMessageConfig() {
-        return messageConfig;
     }
 
     public RuntimeConfig getRuntimeConfig() {

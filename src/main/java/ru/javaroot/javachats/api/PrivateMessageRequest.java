@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 public final class PrivateMessageRequest {
+    private static final int MAX_MESSAGE_LENGTH = 4096;
     private final UUID senderId;
     private final String senderName;
     private final UUID recipientId;
@@ -17,6 +18,9 @@ public final class PrivateMessageRequest {
         this.recipientId = Objects.requireNonNull(recipientId, "recipientId");
         this.recipientName = clean(recipientName, "recipientName");
         this.message = clean(message, "message");
+        if (this.message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("message is too long");
+        }
     }
 
     public UUID senderId() { return senderId; }

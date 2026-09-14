@@ -21,7 +21,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ChatPinger {
-    private static final Pattern MENTION_PATTERN = Pattern.compile("@(\\w+)");
+    private static final Pattern MENTION_PATTERN = Pattern.compile("@([\\p{L}\\p{N}_]+)");
     private final JavaChat plugin;
 
     public ChatPinger(JavaChat plugin) {
@@ -36,25 +36,36 @@ public class ChatPinger {
 
         Matcher matcher = MENTION_PATTERN.matcher(message);
         while (matcher.find()) {
-            Player player = Bukkit.getPlayerExact(matcher.group(1));
-            if (player != null) {
-                mentioned.add(player);
+            String name = matcher.group(1);
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (player.getName().equalsIgnoreCase(name)) {
+                    mentioned.add(player);
+                    break;
+                }
             }
         }
         return mentioned;
     }
 
-    public String processMessageFor(String message, Player recipient) {
+    public Component processComponentFor(String message, Player recipient) {
         if (!plugin.getRuntimeConfig().ping().enabled()) {
-            return message;
+            return TextUtil.literal(message);
         }
-
         String targetColor = plugin.getMessageSnapshot().text("ping.highlight.target");
         String othersColor = plugin.getMessageSnapshot().text("ping.highlight.others");
         String target = Pattern.quote(recipient.getName());
-        return Pattern.compile("@" + target + "\\b", Pattern.CASE_INSENSITIVE)
-                .matcher(message)
-                .replaceAll(Matcher.quoteReplacement(targetColor + "@" + recipient.getName() + othersColor));
+        Pattern pattern = Pattern.compile("(?<![\\p{L}\\p{N}_])@" + target
+                + "(?![\\p{L}\\p{N}_])", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+        Matcher matcher = pattern.matcher(message);
+        Component result = Component.empty();
+        int end = 0;
+        while (matcher.find()) {
+            result = result.append(TextUtil.literal(message.substring(end, matcher.start())));
+            result = result.append(TextUtil.format((targetColor == null ? "" : targetColor)
+                    + "@" + recipient.getName() + (othersColor == null ? "" : othersColor)));
+            end = matcher.end();
+        }
+        return result.append(TextUtil.literal(message.substring(end)));
     }
 
     public void sendNotification(Player player) {

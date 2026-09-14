@@ -7,6 +7,7 @@ import ru.javaroot.JavaChat;
 import ru.javaroot.javachats.utils.LogVars;
 
 import java.io.File;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,6 +19,9 @@ import java.util.List;
 import java.util.Map;
 
 public class AiRules {
+    private static final int MAX_TRAINING_LINES = 1000;
+    private static final int MAX_TRAINING_LINE_LENGTH = 4096;
+    private static final long MAX_TRAINING_FILE_BYTES = 1024L * 1024L;
     private final JavaChat plugin;
     private final Map<String, RuleInfo> rules = new HashMap<>();
     private final List<String> trainingPlus = new ArrayList<>();
@@ -40,7 +44,11 @@ public class AiRules {
         }
 
         FileConfiguration promptConfig = YamlConfiguration.loadConfiguration(promptFile);
-        systemPrompt = resolveSystemPrompt(promptFileExists, promptConfig.getString("system-prompt"), fallbackPrompt);
+        String configuredPrompt = promptConfig.getString("system-prompt");
+        if (configuredPrompt == null) {
+            configuredPrompt = readPlainPrompt(promptFile);
+        }
+        systemPrompt = resolveSystemPrompt(promptFileExists, configuredPrompt, fallbackPrompt);
 
         File file = new File(plugin.getDataFolder(), "AIHELPER.yml");
         if (!file.exists()) {
@@ -70,6 +78,22 @@ public class AiRules {
         trainingMinus.addAll(loadTrainingFile("learning/trainingminus.txt"));
     }
 
+    private String readPlainPrompt(File file) {
+        try {
+            if (Files.size(file.toPath()) > MAX_TRAINING_FILE_BYTES) {
+                throw new IOException("prompt file is too large");
+            }
+            byte[] bytes = Files.readAllBytes(file.toPath());
+            String prompt = new String(bytes, StandardCharsets.UTF_8).trim();
+            return prompt.isEmpty() ? null : prompt;
+        } catch (IOException e) {
+            plugin.getLogs().warning("ai-training-read", LogVars.of(
+                    "file", file.getName(),
+                    "error", String.valueOf(e.getMessage())));
+            return null;
+        }
+    }
+
     private List<String> loadTrainingFile(String fileName) {
         Path path = new File(plugin.getDataFolder(), fileName).toPath();
         try {
@@ -78,7 +102,23 @@ public class AiRules {
                 Files.createFile(path);
                 return java.util.Collections.emptyList();
             }
-            return Files.readAllLines(path, StandardCharsets.UTF_8);
+            if (Files.size(path) > MAX_TRAINING_FILE_BYTES) {
+                throw new IOException("training file is too large");
+            }
+            List<String> result = new ArrayList<String>();
+            try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.length() > MAX_TRAINING_LINE_LENGTH) {
+                        throw new IOException("training line is too long");
+                    }
+                    if (result.size() >= MAX_TRAINING_LINES) {
+                        throw new IOException("too many training lines");
+                    }
+                    result.add(line);
+                }
+            }
+            return result;
         } catch (IOException e) {
             plugin.getLogs().warning("ai-training-read", LogVars.of(
                     "file", fileName,
@@ -88,12 +128,18 @@ public class AiRules {
     }
 
     public synchronized boolean addTrainingMessage(boolean plus, String message) {
+        if (message == null || message.length() > MAX_TRAINING_LINE_LENGTH) {
+            return false;
+        }
         String cleaned = message.trim();
         if (cleaned.isEmpty()) {
             return false;
         }
 
         List<String> current = plus ? trainingPlus : trainingMinus;
+        if (current.size() >= MAX_TRAINING_LINES) {
+            return false;
+        }
         for (String line : current) {
             if (line.trim().equalsIgnoreCase(cleaned)) {
                 return false;
@@ -104,7 +150,11 @@ public class AiRules {
         Path path = new File(plugin.getDataFolder(), fileName).toPath();
         try {
             Files.createDirectories(path.getParent());
-            Files.write(path, (cleaned + System.lineSeparator()).getBytes(StandardCharsets.UTF_8),
+            byte[] line = (cleaned + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
+            if (Files.exists(path) && Files.size(path) + line.length > MAX_TRAINING_FILE_BYTES) {
+                return false;
+            }
+            Files.write(path, line,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
             plugin.getLogs().warning("ai-training-write", LogVars.of(

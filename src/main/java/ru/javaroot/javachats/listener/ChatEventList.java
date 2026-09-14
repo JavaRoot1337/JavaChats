@@ -17,7 +17,10 @@ public final class ChatEventList implements Listener {
         if (event.isCancelled()) {
             return;
         }
-        if (chat.handleChat(event.getPlayer(), TextUtil.plain(event.message()).trim())) {
+        java.util.UUID playerId = event.getPlayer().getUniqueId();
+        String playerName = event.getPlayer().getName();
+        String message = TextUtil.plain(event.message()).trim();
+        if (chat.handleChat(playerId, playerName, message)) {
             event.setCancelled(true);
         }
     }

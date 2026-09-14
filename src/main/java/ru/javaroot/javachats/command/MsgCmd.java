@@ -46,8 +46,12 @@ public class MsgCmd implements CommandExecutor {
             return true;
         }
 
-        plugin.getPrivateMessages().send(new PrivateMessageRequest(
-                p.getUniqueId(), p.getName(), target.getUniqueId(), target.getName(), msg));
+        try {
+            plugin.getPrivateMessages().send(new PrivateMessageRequest(
+                    p.getUniqueId(), p.getName(), target.getUniqueId(), target.getName(), msg));
+        } catch (IllegalArgumentException error) {
+            p.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text("messages.usage-msg")));
+        }
         return true;
     }
 }

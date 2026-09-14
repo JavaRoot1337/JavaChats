@@ -1,3 +1,4 @@
+# поддержка? - t.me/javaroot
 # чаты
 chats:
   local:
@@ -65,6 +66,7 @@ anti-repeat:
 
 # ИИ хелпер
 ai-helper:
+  failure-policy: allow # поведение при полном сбое ИИ: allow или block (1 - пропускает сообщение, 2 - блокирует сообщение)
   user-prompt-format: 'Сообщение: %message%' # запрос
   temperature: 0.0 # температура
   censor-timeout-seconds: 5 # таймаут цензуры
@@ -104,6 +106,7 @@ logs:
     messages:
       config-resource-missing: 'Не найден ресурс %resource%.'
       config-defaults-load: 'Не удалось загрузить настройки %resource%: %error%'
+      config-validation: 'Некорректные настройки: %error%'
       chat-file-create: 'Не удалось создать файл лога чата: %error%'
       chat-file-write: 'Не удалось записать лог чата: %error%'
       chat-file-pattern: 'Некорректный шаблон файла лога: %error%'
