@@ -8,6 +8,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.ServicePriority;
 import ru.javaroot.javachats.aihelper.AiMod;
 import ru.javaroot.javachats.api.JavaChatsApi;
+import ru.javaroot.javachats.bstats.BStats;
 import ru.javaroot.javachats.command.AiHelperCmd;
 import ru.javaroot.javachats.command.GlavCmd;
 import ru.javaroot.javachats.command.MsgCmd;
@@ -90,6 +91,7 @@ public class JavaChat extends JavaPlugin {
 
         pm.registerEvents(new ChatEventList(chatList), this);
         pm.registerEvents(new ConnectionList(this, chatList), this);
+        new BStats(this);
     }
 
     @Override
