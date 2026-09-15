@@ -3,6 +3,8 @@ package ru.javaroot.javachats.config;
 import org.bukkit.configuration.file.FileConfiguration;
 import ru.javaroot.javachats.api.ChatChannel;
 
+import java.net.URI;
+
 public final class RuntimeConfig {
     private final Channel local;
     private final Channel global;
@@ -63,12 +65,26 @@ public final class RuntimeConfig {
         if (antiCaps.percent() < 0 || antiCaps.percent() > 100 || antiCaps.minLength() < 0) {
             throw new IllegalArgumentException("invalid anti-caps settings");
         }
+        if (antiCaps.fadeInMs() < 0 || antiCaps.stayMs() < 0 || antiCaps.fadeOutMs() < 0) {
+            throw new IllegalArgumentException("invalid anti-caps title settings");
+        }
         if (antiSpam.delayMs() < 0 || antiSpam.strikes() < 0 || antiSpam.strikeDelayTicks() < 0) {
             throw new IllegalArgumentException("invalid anti-spam settings");
         }
-        if (ai.blockMaxQueueSize() < 1 || ai.censorTimeoutSeconds() < 0
+        if (antiSpam.fadeInMs() < 0 || antiSpam.stayMs() < 0 || antiSpam.fadeOutMs() < 0) {
+            throw new IllegalArgumentException("invalid anti-spam title settings");
+        }
+        if (ping.fadeInTicks() < 0 || ping.stayTicks() < 0 || ping.fadeOutTicks() < 0
+                || ping.volume() < 0 || ping.pitch() < 0) {
+            throw new IllegalArgumentException("invalid ping settings");
+        }
+        if (ai.blockMaxQueueSize() < 1 || ai.blockInitialDelayTicks() < 0 || ai.censorTimeoutSeconds() < 0
                 || Double.isNaN(ai.temperature()) || Double.isInfinite(ai.temperature())) {
             throw new IllegalArgumentException("invalid AI settings");
+        }
+        if (ai.censorTitle().fadeInMs() < 0 || ai.censorTitle().stayMs() < 0
+                || ai.censorTitle().fadeOutMs() < 0) {
+            throw new IllegalArgumentException("invalid AI title settings");
         }
         validateProvider(ai.mistral(), "ai-helper.mistral-api");
         validateProvider(ai.groq(), "ai-helper.groq-api");
@@ -85,6 +101,18 @@ public final class RuntimeConfig {
         if (provider.timeoutSeconds() < 1 || provider.cooldownSeconds() < 0
                 || provider.punishProbability() < 0 || provider.punishProbability() > 1) {
             throw new IllegalArgumentException("invalid provider settings: " + path);
+        }
+        if (!"censor".equalsIgnoreCase(provider.mode()) && !"block".equalsIgnoreCase(provider.mode())) {
+            throw new IllegalArgumentException("invalid provider mode: " + path);
+        }
+        try {
+            URI endpoint = URI.create(provider.endpoint());
+            if (!"https".equalsIgnoreCase(endpoint.getScheme()) || endpoint.getHost() == null
+                    || endpoint.getUserInfo() != null || endpoint.getFragment() != null) {
+                throw new IllegalArgumentException("invalid provider endpoint: " + path);
+            }
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException("invalid provider endpoint: " + path, error);
         }
     }
 

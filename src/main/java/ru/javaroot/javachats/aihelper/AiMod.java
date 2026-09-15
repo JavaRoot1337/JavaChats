@@ -23,18 +23,19 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Semaphore;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class AiMod implements ModerationService {
     private static final int MAX_MESSAGE_LENGTH = 4096;
     private final JavaChat plugin;
-    private final AiRules rules;
+    private volatile AiRules rules;
     private final ServerScheduler scheduler;
-    private final AtomicLong lastCheckMistral = new AtomicLong();
-    private final AtomicLong lastCheckGroq = new AtomicLong();
+    private volatile Semaphore moderationQueue = new Semaphore(1);
     private volatile RuntimeConfig.Ai aiConfig;
     private volatile MistralApi mistralApi;
     private volatile GroqApi groqApi;
@@ -50,42 +51,55 @@ public class AiMod implements ModerationService {
         this.scheduler = scheduler;
     }
 
-    public void reload() {
-        stopProviders();
-        RuntimeConfig.Ai config = plugin.getRuntimeConfig().ai();
-        rules.load(config.systemPrompt());
-        aiConfig = config;
+    public boolean reload(RuntimeConfig config) {
+        AiRules nextRules = new AiRules(plugin);
+        try {
+            nextRules.load(config.ai().systemPrompt());
+        } catch (RuntimeException error) {
+            plugin.getLogs().warning("config-validation", LogVars.of("error", String.valueOf(error.getMessage())));
+            return false;
+        }
 
-        RuntimeConfig.Provider mistral = aiConfig.mistral();
+        RuntimeConfig.Provider mistral = config.ai().mistral();
+        MistralApi nextMistral = null;
         String mistralKey = mistral.apiKey();
         if (isConfigured(mistral, mistralKey)) {
-            mistralApi = createMistral(mistral, mistralKey);
+            try {
+                nextMistral = new MistralApi(plugin, mistral, mistralKey);
+            } catch (RuntimeException error) {
+                plugin.getLogs().warning("mistral-config", LogVars.of("error", String.valueOf(error.getMessage())));
+                return false;
+            }
         }
 
-        RuntimeConfig.Provider groq = aiConfig.groq();
+        RuntimeConfig.Provider groq = config.ai().groq();
+        GroqApi nextGroq = null;
         String groqKey = groq.apiKey();
         if (isConfigured(groq, groqKey)) {
-            groqApi = createGroq(groq, groqKey);
+            try {
+                nextGroq = new GroqApi(plugin, groq, groqKey);
+            } catch (RuntimeException error) {
+                if (nextMistral != null) {
+                    nextMistral.close();
+                }
+                plugin.getLogs().warning("groq-config", LogVars.of("error", String.valueOf(error.getMessage())));
+                return false;
+            }
         }
-
-    }
-
-    private MistralApi createMistral(RuntimeConfig.Provider provider, String key) {
-        try {
-            return new MistralApi(plugin, provider, key);
-        } catch (RuntimeException ex) {
-            plugin.getLogs().warning("mistral-config", LogVars.of("error", String.valueOf(ex.getMessage())));
-            return null;
+        MistralApi oldMistral = mistralApi;
+        GroqApi oldGroq = groqApi;
+        rules = nextRules;
+        aiConfig = config.ai();
+        mistralApi = nextMistral;
+        groqApi = nextGroq;
+        moderationQueue = new Semaphore(config.ai().blockMaxQueueSize());
+        if (oldMistral != null) {
+            oldMistral.close();
         }
-    }
-
-    private GroqApi createGroq(RuntimeConfig.Provider provider, String key) {
-        try {
-            return new GroqApi(plugin, provider, key);
-        } catch (RuntimeException ex) {
-            plugin.getLogs().warning("groq-config", LogVars.of("error", String.valueOf(ex.getMessage())));
-            return null;
+        if (oldGroq != null) {
+            oldGroq.close();
         }
+        return true;
     }
 
     @Override
@@ -105,22 +119,28 @@ public class AiMod implements ModerationService {
             return CompletableFuture.completedFuture(ModerationResult.clean());
         }
 
-        boolean useMistral = isModerationProvider(cfg.mistral(), mistralApi != null)
-                && claimCheck(lastCheckMistral, cfg.mistral().cooldownSeconds());
-        boolean useGroq = isModerationProvider(cfg.groq(), groqApi != null)
-                && claimCheck(lastCheckGroq, cfg.groq().cooldownSeconds());
+        Semaphore queue = moderationQueue;
+        if (!queue.tryAcquire()) {
+            plugin.getLogs().warning("moderation-request", LogVars.of("error", "AI request queue is full"));
+            return CompletableFuture.completedFuture(failureResult(cfg));
+        }
+        boolean useMistral = isModerationProvider(cfg.mistral(), mistralApi != null);
+        boolean useGroq = isModerationProvider(cfg.groq(), groqApi != null);
         if (!useMistral && !useGroq) {
+            queue.release();
             return CompletableFuture.completedFuture(ModerationResult.clean());
         }
 
         List<String> plus = rules.getTrainingPlus();
         List<String> minus = rules.getTrainingMinus();
         String systemPrompt = rules.getSystemPrompt();
-        CompletableFuture<MistralApi.AiResult> mistral = useMistral
-                ? mistralApi.checkMsg(msg, rules.getRules(), plus, minus, cfg, systemPrompt)
+        CompletableFuture<AiProviderClient.Result> mistral = useMistral
+                ? delayed(cfg.blockInitialDelayTicks(),
+                        () -> mistralApi.check(msg, rules.getRules(), plus, minus, cfg, systemPrompt))
                 : CompletableFuture.completedFuture(null);
-        CompletableFuture<GroqApi.AiResult> groq = useGroq
-                ? groqApi.checkMsg(msg, rules.getRules(), plus, minus, cfg, systemPrompt)
+        CompletableFuture<AiProviderClient.Result> groq = useGroq
+                ? delayed(cfg.blockInitialDelayTicks(),
+                        () -> groqApi.check(msg, rules.getRules(), plus, minus, cfg, systemPrompt))
                 : CompletableFuture.completedFuture(null);
 
         int activeProviders = (useMistral ? 1 : 0) + (useGroq ? 1 : 0);
@@ -131,26 +151,29 @@ public class AiMod implements ModerationService {
         if (useGroq) {
             groq = tolerateProviderFailure(groq, "Groq", failedProviders);
         }
-        final CompletableFuture<MistralApi.AiResult> mistralResult = mistral;
-        final CompletableFuture<GroqApi.AiResult> groqResult = groq;
+        final CompletableFuture<AiProviderClient.Result> mistralResult = mistral;
+        final CompletableFuture<AiProviderClient.Result> groqResult = groq;
         CompletableFuture<ModerationResult> combined = CompletableFuture.allOf(mistral, groq)
                 .thenApply(ignored -> {
-                    MistralApi.AiResult mistralValue = mistralResult.join();
-                    GroqApi.AiResult groqValue = groqResult.join();
+                    AiProviderClient.Result mistralValue = mistralResult.join();
+                    AiProviderClient.Result groqValue = groqResult.join();
                     boolean allFailed = activeProviders > 0
                             && (failedProviders.get() == activeProviders
                             || (mistralValue == null && groqValue == null));
                     return combineModeration(playerId, msg, mistralValue, groqValue, cfg, allFailed);
                 })
                 ;
-        return withTimeout(combined, cfg.censorTimeoutSeconds())
+        return withTimeout(combined, cfg.censorTimeoutSeconds(), mistral, groq)
                 .handle((result, error) -> {
                     if (error == null) {
                         return result;
                     }
                     plugin.getLogs().warning("moderation-request", LogVars.of("error", rootMessage(error)));
                     return failureResult(cfg);
-                });
+                }).thenApply(result -> {
+                    logModeration(playerId, msg, result, cfg);
+                    return result;
+                }).whenComplete((result, error) -> queue.release());
     }
 
     private <T> CompletableFuture<T> tolerateProviderFailure(CompletableFuture<T> future, String provider,
@@ -187,8 +210,8 @@ public class AiMod implements ModerationService {
         });
     }
 
-    private ModerationResult combineModeration(UUID playerId, String msg, MistralApi.AiResult mistral,
-            GroqApi.AiResult groq, RuntimeConfig.Ai cfg, boolean allProvidersFailed) {
+    private ModerationResult combineModeration(UUID playerId, String msg, AiProviderClient.Result mistral,
+            AiProviderClient.Result groq, RuntimeConfig.Ai cfg, boolean allProvidersFailed) {
         if (allProvidersFailed) {
             return failureResult(cfg);
         }
@@ -201,22 +224,24 @@ public class AiMod implements ModerationService {
         if (isPunished(mistral, cfg.mistral().punishProbability())) {
             violation = true;
             blockingViolation = "block".equalsIgnoreCase(cfg.mistral().mode());
-            rule = mistral.rule;
-            probability = Math.max(probability, mistral.probability);
-            if (mistral.bad_words != null) {
-                badWords.addAll(mistral.bad_words);
+            rule = mistral.rule();
+            probability = mistral.probability();
+            if (mistral.badWords() != null) {
+                badWords.addAll(mistral.badWords());
             }
-            censored = censorResult(censored, mistral.bad_words);
+            censored = censorResult(censored, mistral.badWords());
         }
         if (isPunished(groq, cfg.groq().punishProbability())) {
             violation = true;
             blockingViolation = blockingViolation || "block".equalsIgnoreCase(cfg.groq().mode());
-            rule = groq.rule;
-            probability = Math.max(probability, groq.probability);
-            if (groq.bad_words != null) {
-                badWords.addAll(groq.bad_words);
+            if (groq.probability() > probability) {
+                rule = groq.rule();
+                probability = groq.probability();
             }
-            censored = censorResult(censored, groq.bad_words);
+            if (groq.badWords() != null) {
+                badWords.addAll(groq.badWords());
+            }
+            censored = censorResult(censored, groq.badWords());
         }
         if (violation) {
             showCensorTitle(playerId, cfg.censorTitle());
@@ -232,22 +257,48 @@ public class AiMod implements ModerationService {
         return ModerationResult.clean();
     }
 
-    private boolean claimCheck(AtomicLong lastCheck, long cooldownSeconds) {
-        long now = System.currentTimeMillis();
-        long cooldown = Math.max(cooldownSeconds, 0L) * 1000L;
-        while (true) {
-            long previous = lastCheck.get();
-            if (previous > 0 && now - previous < cooldown) {
-                return false;
-            }
-            if (lastCheck.compareAndSet(previous, now)) {
-                return true;
-            }
-        }
-    }
-
     private boolean isConfigured(RuntimeConfig.Provider provider, String key) {
         return provider.enabled() && key != null && !key.trim().isEmpty();
+    }
+
+    private <T> CompletableFuture<T> delayed(long delayTicks, Supplier<CompletableFuture<T>> request) {
+        if (delayTicks == 0) {
+            return request.get();
+        }
+        CompletableFuture<T> result = new CompletableFuture<T>();
+        AtomicReference<CompletableFuture<T>> requestFuture = new AtomicReference<CompletableFuture<T>>();
+        ScheduledFuture<?> delayed = timeoutExecutor.schedule(() -> {
+            if (result.isCancelled()) {
+                return;
+            }
+            try {
+                CompletableFuture<T> current = request.get();
+                requestFuture.set(current);
+                if (result.isCancelled()) {
+                    current.cancel(true);
+                    return;
+                }
+                current.whenComplete((value, error) -> {
+                    if (error == null) {
+                        result.complete(value);
+                    } else {
+                        result.completeExceptionally(error);
+                    }
+                });
+            } catch (RuntimeException error) {
+                result.completeExceptionally(error);
+            }
+        }, delayTicks * 50L, TimeUnit.MILLISECONDS);
+        result.whenComplete((value, error) -> {
+            if (result.isCancelled()) {
+                delayed.cancel(false);
+                CompletableFuture<T> current = requestFuture.get();
+                if (current != null) {
+                    current.cancel(true);
+                }
+            }
+        });
+        return result;
     }
 
     private boolean isModerationProvider(RuntimeConfig.Provider provider, boolean available) {
@@ -255,12 +306,8 @@ public class AiMod implements ModerationService {
                 && ("censor".equalsIgnoreCase(provider.mode()) || "block".equalsIgnoreCase(provider.mode()));
     }
 
-    private boolean isPunished(MistralApi.AiResult result, double threshold) {
-        return result != null && result.violation && result.probability >= threshold;
-    }
-
-    private boolean isPunished(GroqApi.AiResult result, double threshold) {
-        return result != null && result.violation && result.probability >= threshold;
+    private boolean isPunished(AiProviderClient.Result result, double threshold) {
+        return result != null && result.violation() && result.probability() >= threshold;
     }
 
     private String censorResult(String message, List<String> badWords) {
@@ -269,16 +316,16 @@ public class AiMod implements ModerationService {
         }
         String result = message;
         for (String badWord : badWords) {
-            result = replaceCaseInsensitive(result, badWord);
+            result = censor(result, badWord);
         }
         return result;
     }
 
-    private String replaceCaseInsensitive(String source, String target) {
+    static String censor(String source, String target) {
         if (target == null || target.isEmpty()) {
             return source;
         }
-        Pattern pattern = Pattern.compile(Pattern.quote(target), Pattern.CASE_INSENSITIVE);
+        Pattern pattern = Pattern.compile(Pattern.quote(target), Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
         Matcher matcher = pattern.matcher(source);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) {
@@ -288,7 +335,7 @@ public class AiMod implements ModerationService {
         return result.toString();
     }
 
-    private String censorWord(String word) {
+    private static String censorWord(String word) {
         if (word.length() <= 2) {
             StringBuilder stars = new StringBuilder(word.length());
             for (int i = 0; i < word.length(); i++) {
@@ -335,6 +382,28 @@ public class AiMod implements ModerationService {
         return String.valueOf(cause.getMessage());
     }
 
+    private void logModeration(UUID playerId, String message, ModerationResult result, RuntimeConfig.Ai config) {
+        boolean allLogs = config.mistral().allLogs() || config.groq().allLogs();
+        if (!allLogs && !result.violation()) {
+            return;
+        }
+        scheduler.runServer(() -> {
+            Player player = Bukkit.getPlayer(playerId);
+            String playerName = player == null ? playerId.toString() : player.getName();
+            String messageText = plugin.getMessageSnapshot().text("ai-helper.log-message")
+                    .replace("%player%", playerName)
+                    .replace("%message%", message);
+            String verdict = plugin.getMessageSnapshot().text(
+                    result.violation() ? "ai-helper.verdict-punished" : "ai-helper.verdict-clean");
+            String resultText = plugin.getMessageSnapshot().text("ai-helper.log-result")
+                    .replace("%model_ai%", "AI")
+                    .replace("%probability%", String.valueOf(result.probability()))
+                    .replace("%verdict%", verdict);
+            plugin.getLogger().info(TextUtil.plain(TextUtil.format(messageText)));
+            plugin.getLogger().info(TextUtil.plain(TextUtil.format(resultText)));
+        });
+    }
+
     public AiRules getRules() {
         return rules;
     }
@@ -346,12 +415,16 @@ public class AiMod implements ModerationService {
     }
 
     private CompletableFuture<ModerationResult> withTimeout(CompletableFuture<ModerationResult> future,
-            long timeoutSeconds) {
+            long timeoutSeconds, CompletableFuture<?>... requests) {
         if (timeoutSeconds <= 0) {
             return future;
         }
-        ScheduledFuture<?> timeout = timeoutExecutor.schedule(
-                () -> future.completeExceptionally(new IllegalStateException("moderation timeout")),
+        ScheduledFuture<?> timeout = timeoutExecutor.schedule(() -> {
+                    for (CompletableFuture<?> request : requests) {
+                        request.cancel(true);
+                    }
+                    future.completeExceptionally(new IllegalStateException("moderation timeout"));
+                },
                 timeoutSeconds, TimeUnit.SECONDS);
         future.whenComplete((result, error) -> timeout.cancel(false));
         return future;
@@ -366,8 +439,6 @@ public class AiMod implements ModerationService {
         }
         mistralApi = null;
         groqApi = null;
-        lastCheckMistral.set(0L);
-        lastCheckGroq.set(0L);
     }
 
     public void close() {

@@ -25,7 +25,7 @@ dependencies {
     compileOnly 'com.destroystokyo.paper:paper-api:1.16.5-R0.1-SNAPSHOT'
     compileOnly 'net.luckperms:api:5.4'
     implementation 'org.bstats:bstats-bukkit:3.2.1'
-    implementation 'com.google.code.gson:gson:2.8.9'
+    implementation 'com.google.code.gson:gson:2.14.0'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testImplementation 'com.destroystokyo.paper:paper-api:1.16.5-R0.1-SNAPSHOT'
@@ -79,7 +79,7 @@ dependencies {
     modernPaperApi "io.papermc.paper:paper-api:${modernPaperApiVersion.get()}"
     modernPaperApi 'net.luckperms:api:5.4'
     modernPaperApi 'org.bstats:bstats-bukkit:3.2.1'
-    modernPaperApi 'com.google.code.gson:gson:2.8.9'
+    modernPaperApi 'com.google.code.gson:gson:2.14.0'
 }
 
 tasks.register('compileModernJava', JavaCompile) {

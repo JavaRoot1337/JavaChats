@@ -84,22 +84,37 @@ public class ChatPinger {
     }
 
     private void playSound(Player player, ru.javaroot.javachats.config.RuntimeConfig.Ping cfg) {
-        String soundName = cfg.sound();
-        if (soundName == null || soundName.isEmpty()) {
-            return;
-        }
-
         try {
-            Sound sound = Registry.SOUNDS.get(NamespacedKey.minecraft(soundName.toLowerCase(Locale.ROOT)));
+            Sound sound = sound(cfg.sound());
             if (sound == null) {
-                throw new IllegalArgumentException(soundName);
+                throw new IllegalArgumentException(cfg.sound());
             }
             SoundCategory category = SoundCategory.valueOf(cfg.soundCategory().toUpperCase(Locale.ROOT));
             float volume = (float) cfg.volume();
             float pitch = (float) cfg.pitch();
             player.playSound(player.getLocation(), sound, category, volume, pitch);
         } catch (IllegalArgumentException ignored) {
-            plugin.getLogs().warning("ping-sound", LogVars.of("sound", soundName));
+            plugin.getLogs().warning("ping-sound", LogVars.of("sound", String.valueOf(cfg.sound())));
+        }
+    }
+
+    public static Sound sound(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return null;
+        }
+        String value = name.trim();
+        try {
+            return Sound.valueOf(value.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+        }
+        try {
+            NamespacedKey key = NamespacedKey.fromString(value.toLowerCase(Locale.ROOT));
+            if (key == null && value.indexOf(':') < 0) {
+                key = NamespacedKey.minecraft(value.toLowerCase(Locale.ROOT).replace('_', '.'));
+            }
+            return key == null ? null : Registry.SOUNDS.get(key);
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 }

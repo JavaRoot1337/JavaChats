@@ -1,6 +1,7 @@
 package ru.javaroot.javachats.utils;
 
 import ru.javaroot.JavaChat;
+import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -15,9 +16,13 @@ public class LogCfg {
     }
 
     public void reload() {
+        reload(plugin.getConfig());
+    }
+
+    public void reload(FileConfiguration config) {
         Map<String, String> next = new HashMap<>();
-        for (String path : plugin.getConfig().getKeys(true)) {
-            String value = plugin.getConfig().getString(path);
+        for (String path : config.getKeys(true)) {
+            String value = config.getString(path);
             if (value != null) {
                 next.put(path, value);
             }

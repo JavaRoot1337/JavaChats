@@ -6,9 +6,9 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.ServicePriority;
+import org.bstats.bukkit.Metrics;
 import ru.javaroot.javachats.aihelper.AiMod;
 import ru.javaroot.javachats.api.JavaChatsApi;
-import ru.javaroot.javachats.bstats.BStats;
 import ru.javaroot.javachats.command.AiHelperCmd;
 import ru.javaroot.javachats.command.GlavCmd;
 import ru.javaroot.javachats.command.MsgCmd;
@@ -32,6 +32,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 
 public class JavaChat extends JavaPlugin {
+    private static final int BSTATS_PLUGIN_ID = 34054;
     private MetaProvider metaProvider;
     private AiMod aiMod;
     private ChatLogger chatLogger;
@@ -91,7 +92,7 @@ public class JavaChat extends JavaPlugin {
 
         pm.registerEvents(new ChatEventList(chatList), this);
         pm.registerEvents(new ConnectionList(this, chatList), this);
-        new BStats(this);
+        new Metrics(this, BSTATS_PLUGIN_ID);
     }
 
     @Override
@@ -113,14 +114,16 @@ public class JavaChat extends JavaPlugin {
     }
 
     public boolean reloadConfigs() {
-        reloadConfig();
-        loadConfigDefaults();
         File messageFile = new File(getDataFolder(), "message.yml");
+        File configFile = new File(getDataFolder(), "config.yml");
         RuntimeConfig newRuntimeConfig;
         MessageSnapshot newMessageSnapshot;
+        FileConfiguration newConfig;
         try {
+            newConfig = YamlConfiguration.loadConfiguration(configFile);
+            loadConfigDefaults(newConfig);
             FileConfiguration newMessageConfig = YamlConfiguration.loadConfiguration(messageFile);
-            newRuntimeConfig = RuntimeConfig.from(getConfig());
+            newRuntimeConfig = RuntimeConfig.from(newConfig);
             newMessageSnapshot = MessageSnapshot.from(newMessageConfig);
             newRuntimeConfig.validate();
             newMessageSnapshot.validate();
@@ -128,19 +131,21 @@ public class JavaChat extends JavaPlugin {
             logs.warning("config-validation", LogVars.of("error", String.valueOf(error.getMessage())));
             return false;
         }
+        if (aiMod != null && !aiMod.reload(newRuntimeConfig)) {
+            return false;
+        }
         runtimeConfig = newRuntimeConfig;
         messageSnapshot = newMessageSnapshot;
-        logs.reload();
-        if (aiMod != null) {
-            aiMod.reload();
-        }
+        logs.reload(newConfig);
         if (chatLogger != null) {
-            chatLogger.reload();
+            chatLogger.reload(newConfig);
         }
+        reloadConfig();
+        loadConfigDefaults(getConfig());
         return true;
     }
 
-    private void loadConfigDefaults() {
+    private void loadConfigDefaults(FileConfiguration config) {
         try (InputStream stream = getResource("config.yml")) {
             if (stream == null) {
                 logs.warning("config-resource-missing", LogVars.of("resource", "config.yml"));
@@ -148,7 +153,7 @@ public class JavaChat extends JavaPlugin {
             }
             FileConfiguration defaults = YamlConfiguration.loadConfiguration(
                     new InputStreamReader(stream, StandardCharsets.UTF_8));
-            getConfig().addDefaults(defaults);
+            config.addDefaults(defaults);
         } catch (IOException e) {
             logs.warning("config-defaults-load", LogVars.of(
                     "resource", "config.yml",

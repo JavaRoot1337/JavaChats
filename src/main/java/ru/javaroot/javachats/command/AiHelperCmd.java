@@ -37,18 +37,22 @@ public class AiHelperCmd implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            boolean added = plugin.getAiMod().getRules().addTrainingMessage(plus, message);
-            String key = added ? "ai-helper.added-message" : "ai-helper.already-added";
-            String response = plugin.getMessageSnapshot().text(key);
-            if (added) {
-                response = response.replace("%list%", plus ? "trainingplus" : "trainingminus");
-            }
-            sender.sendMessage(TextUtil.format(response));
+            plugin.getAiMod().getRules().addTrainingMessageAsync(plus, message).thenAccept(added ->
+                    plugin.getScheduler().runServer(() -> sendTrainingResult(sender, plus, added)));
             return true;
         }
 
         sender.sendMessage(TextUtil.format(plugin.getMessageSnapshot().text("ai-helper.usage-aihelper")));
         return true;
+    }
+
+    private void sendTrainingResult(CommandSender sender, boolean plus, boolean added) {
+        String key = added ? "ai-helper.added-message" : "ai-helper.already-added";
+        String response = plugin.getMessageSnapshot().text(key);
+        if (added) {
+            response = response.replace("%list%", plus ? "trainingplus" : "trainingminus");
+        }
+        sender.sendMessage(TextUtil.format(response));
     }
 
     @Override

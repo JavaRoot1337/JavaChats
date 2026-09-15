@@ -6,8 +6,6 @@ import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.NamespacedKey;
-import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import ru.javaroot.JavaChat;
@@ -38,6 +36,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Collections;
+import java.util.function.Supplier;
 
 public class ChatList implements ChatService {
     private final JavaChat plugin;
@@ -91,6 +90,20 @@ public class ChatList implements ChatService {
         long now = System.currentTimeMillis();
         boolean global = channel == ChatChannel.GLOBAL;
 
+        RuntimeConfig.Channel channelConfig = cfg.channel(channel);
+        String permission = channelConfig.sendingPermission();
+        if (permission != null && !permission.isEmpty() && !player.hasPermission(permission)) {
+            send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("messages.no-permission")));
+            return;
+        }
+
+        if (global) {
+            message = message.substring(globalSymbol.length()).trim();
+            if (message.isEmpty()) {
+                return;
+            }
+        }
+
         if (cfg.antiRepeat() && message.equalsIgnoreCase(lastMessages.getOrDefault(uuid, ""))) {
             send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("anti-repeat")));
             return;
@@ -98,19 +111,10 @@ public class ChatList implements ChatService {
 
         if (cfg.antiSpam().enabled()) {
             long lastTime = lastMsgTime.getOrDefault(uuid, 0L);
-            if (cfg.antiSpam().delayMs() >= 0 && lastTime > 0
-                    && now - lastTime < cfg.antiSpam().delayMs()) {
+            if (lastTime > 0 && now - lastTime < cfg.antiSpam().delayMs()) {
                 triggerSpamPunish(uuid);
                 return;
             }
-            lastMsgTime.put(uuid, now);
-        }
-
-        RuntimeConfig.Channel channelConfig = cfg.channel(channel);
-        String permission = channelConfig.sendingPermission();
-        if (permission != null && !permission.isEmpty() && !player.hasPermission(permission)) {
-            send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("messages.no-permission")));
-            return;
         }
 
         Map<UUID, Long> channelTimes = global ? lastGlobalTime : lastLocalTime;
@@ -120,14 +124,10 @@ public class ChatList implements ChatService {
             send(uuid, TextUtil.format(plugin.getMessageSnapshot().text("messages.cooldown")));
             return;
         }
-        channelTimes.put(uuid, now);
-
-        if (global) {
-            message = message.substring(globalSymbol.length()).trim();
-            if (message.isEmpty()) {
-                return;
-            }
+        if (cfg.antiSpam().enabled()) {
+            lastMsgTime.put(uuid, now);
         }
+        channelTimes.put(uuid, now);
 
         ChatRequest request = new ChatRequest(uuid, senderName, channel, message);
         publish(request);
@@ -135,18 +135,48 @@ public class ChatList implements ChatService {
 
     @Override
     public CompletionStage<ChatResult> publish(ChatRequest request) {
+        return onServer(() -> publishOnServer(request));
+    }
+
+    private CompletionStage<ChatResult> publishOnServer(ChatRequest request) {
         CompletableFuture<FilterState> chain = CompletableFuture.completedFuture(new FilterState(request, null));
         for (ChatFilter filter : filters) {
-            chain = chain.thenCompose(state -> applyFilter(state, filter));
+            chain = chain.thenCompose(state -> onServer(() -> applyFilter(state, filter)));
         }
 
-        return chain.thenCompose(state -> {
+        return chain.thenCompose(state -> onServer(() -> {
             if (state.result() != null) {
                 return CompletableFuture.completedFuture(state.result());
             }
             return plugin.getAiMod().moderate(request.senderId(), state.request().message())
                     .thenCompose(moderation -> dispatch(state.request(), moderation));
+        }));
+    }
+
+    private <T> CompletionStage<T> onServer(Supplier<CompletionStage<T>> action) {
+        CompletableFuture<T> result = new CompletableFuture<>();
+        org.bukkit.scheduler.BukkitTask task = scheduler.runServer(() -> {
+            try {
+                CompletionStage<T> stage = action.get();
+                if (stage == null) {
+                    result.completeExceptionally(new IllegalStateException("server action returned null"));
+                    return;
+                }
+                stage.whenComplete((value, error) -> {
+                    if (error == null) {
+                        result.complete(value);
+                    } else {
+                        result.completeExceptionally(error);
+                    }
+                });
+            } catch (RuntimeException error) {
+                result.completeExceptionally(error);
+            }
         });
+        if (task == null) {
+            result.completeExceptionally(new IllegalStateException("plugin is shutting down"));
+        }
+        return result;
     }
 
     @Override
@@ -349,7 +379,7 @@ public class ChatList implements ChatService {
         if (name == null || name.isEmpty()) {
             return null;
         }
-        return Registry.SOUNDS.get(NamespacedKey.minecraft(name.toLowerCase(Locale.ROOT)));
+        return ChatPinger.sound(name);
     }
 
     private void triggerSpamPunish(UUID uuid) {

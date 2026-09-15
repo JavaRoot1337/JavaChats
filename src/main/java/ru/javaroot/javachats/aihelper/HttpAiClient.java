@@ -17,7 +17,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Future;
 import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 final class HttpAiClient implements AutoCloseable {
@@ -28,8 +30,11 @@ final class HttpAiClient implements AutoCloseable {
     private final String key;
     private final URL endpoint;
     private final int timeoutMs;
+    private final long cooldownMs;
     private final String name;
     private final Set<CompletableFuture<String>> pending = ConcurrentHashMap.newKeySet();
+    private final Map<CompletableFuture<String>, Future<?>> tasks = new ConcurrentHashMap<>();
+    private long lastRequestAt;
     private final ExecutorService executor = new ThreadPoolExecutor(
             1, 1, 0L, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<Runnable>(MAX_PENDING_REQUESTS),
@@ -39,7 +44,7 @@ final class HttpAiClient implements AutoCloseable {
                 return thread;
             }, new ThreadPoolExecutor.AbortPolicy());
 
-    HttpAiClient(JavaChat plugin, String key, String endpoint, long timeoutSeconds, String name) {
+    HttpAiClient(JavaChat plugin, String key, String endpoint, long timeoutSeconds, long cooldownSeconds, String name) {
         this.plugin = plugin;
         this.key = key;
         this.endpoint = toUrl(endpoint);
@@ -47,6 +52,7 @@ final class HttpAiClient implements AutoCloseable {
                 ? Integer.MAX_VALUE
                 : Math.max(1L, timeoutSeconds * 1000L);
         this.timeoutMs = (int) timeout;
+        this.cooldownMs = Math.max(0L, cooldownSeconds) * 1000L;
         this.name = name;
     }
 
@@ -61,7 +67,7 @@ final class HttpAiClient implements AutoCloseable {
         CompletableFuture<String> result = new CompletableFuture<>();
         pending.add(result);
         try {
-            executor.execute(() -> {
+            Future<?> task = executor.submit(() -> {
                 try {
                     result.complete(send(request));
                 } catch (IOException ex) {
@@ -69,6 +75,13 @@ final class HttpAiClient implements AutoCloseable {
                     result.completeExceptionally(ex);
                 } finally {
                     pending.remove(result);
+                    tasks.remove(result);
+                }
+            });
+            tasks.put(result, task);
+            result.whenComplete((value, error) -> {
+                if (result.isCancelled()) {
+                    task.cancel(true);
                 }
             });
             return result;
@@ -80,6 +93,7 @@ final class HttpAiClient implements AutoCloseable {
     }
 
     private String send(byte[] body) throws IOException {
+        waitForCooldown();
         HttpURLConnection connection = (HttpURLConnection) endpoint.openConnection();
         connection.setConnectTimeout(timeoutMs);
         connection.setReadTimeout(timeoutMs);
@@ -110,6 +124,22 @@ final class HttpAiClient implements AutoCloseable {
         } finally {
             connection.disconnect();
         }
+    }
+
+    private void waitForCooldown() throws IOException {
+        if (cooldownMs == 0) {
+            return;
+        }
+        long wait = lastRequestAt + cooldownMs - System.currentTimeMillis();
+        if (wait > 0) {
+            try {
+                Thread.sleep(wait);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IOException("AI request interrupted", error);
+            }
+        }
+        lastRequestAt = System.currentTimeMillis();
     }
 
     private String readResponse(InputStream input) throws IOException {
@@ -156,6 +186,10 @@ final class HttpAiClient implements AutoCloseable {
         IllegalStateException error = new IllegalStateException("AI client is closed");
         for (CompletableFuture<String> request : pending) {
             request.completeExceptionally(error);
+            Future<?> task = tasks.remove(request);
+            if (task != null) {
+                task.cancel(true);
+            }
         }
         pending.clear();
         executor.shutdownNow();

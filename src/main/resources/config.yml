@@ -30,7 +30,7 @@ ping-chat:
     fade-out: 20 # исчезновение тиков
   sound:
     enable: true # звук
-    name: 'BLOCK_NOTE_BLOCK_GUITAR' # название звука
+    name: 'minecraft:block.note_block.guitar' # название звука
     volume: 0.7 # громкость
     pitch: 2.0 # высота
     category: 'MASTER' # категория

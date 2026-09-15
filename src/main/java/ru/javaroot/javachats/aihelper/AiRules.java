@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 public class AiRules {
     private static final int MAX_TRAINING_LINES = 1000;
@@ -127,7 +128,15 @@ public class AiRules {
         }
     }
 
-    public synchronized boolean addTrainingMessage(boolean plus, String message) {
+    public CompletableFuture<Boolean> addTrainingMessageAsync(boolean plus, String message) {
+        CompletableFuture<Boolean> result = new CompletableFuture<Boolean>();
+        if (plugin.getScheduler().runAsync(() -> result.complete(addTrainingMessage(plus, message))) == null) {
+            result.complete(false);
+        }
+        return result;
+    }
+
+    private synchronized boolean addTrainingMessage(boolean plus, String message) {
         if (message == null || message.length() > MAX_TRAINING_LINE_LENGTH) {
             return false;
         }

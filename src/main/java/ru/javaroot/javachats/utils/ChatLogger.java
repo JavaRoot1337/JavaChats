@@ -1,6 +1,7 @@
 package ru.javaroot.javachats.utils;
 
 import ru.javaroot.JavaChat;
+import org.bukkit.configuration.file.FileConfiguration;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,21 +34,25 @@ public class ChatLogger {
     }
 
     public synchronized void reload() {
+        reload(plugin.getConfig());
+    }
+
+    public synchronized void reload(FileConfiguration config) {
         close();
-        if (!plugin.getConfig().getBoolean("logs.chat.enabled")) {
+        if (!config.getBoolean("logs.chat.enabled")) {
             return;
         }
 
         try {
-            fileFormat = DateTimeFormatter.ofPattern(plugin.getConfig().getString("logs.chat.file-name-pattern"));
-            timeFormat = DateTimeFormatter.ofPattern(plugin.getConfig().getString("logs.chat.time-pattern"));
+            fileFormat = DateTimeFormatter.ofPattern(config.getString("logs.chat.file-name-pattern"));
+            timeFormat = DateTimeFormatter.ofPattern(config.getString("logs.chat.time-pattern"));
         } catch (IllegalArgumentException | NullPointerException ex) {
             plugin.getLogs().warning("chat-file-pattern", LogVars.of("error", String.valueOf(ex.getMessage())));
             return;
         }
 
-        String folderName = plugin.getConfig().getString("logs.chat.folder");
-        String extension = plugin.getConfig().getString("logs.chat.file-extension");
+        String folderName = config.getString("logs.chat.folder");
+        String extension = config.getString("logs.chat.file-extension");
         if (folderName == null || folderName.isEmpty() || extension == null) {
             plugin.getLogs().warning("chat-file-config", LogVars.of(
                     "folder", String.valueOf(folderName),
@@ -118,14 +123,6 @@ public class ChatLogger {
         writer = null;
         if (currentWriter != null) {
             currentWriter.shutdown();
-            try {
-                if (!currentWriter.awaitTermination(2, TimeUnit.SECONDS)) {
-                    currentWriter.shutdownNow();
-                }
-            } catch (InterruptedException ex) {
-                currentWriter.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
         }
         logFile = null;
         fileFormat = null;
