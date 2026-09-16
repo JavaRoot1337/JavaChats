@@ -1,47 +1,25 @@
 # JavaChats
 
-Плагин для Minecraft сервера, который расширяет функциональность чата с поддержкой локального и глобального чата, интеграцией с Discord и другими возможностями.
+Paper-only chat plugin for Paper 1.16.5–26.2: local/global chat, private messages, mentions and AI moderation.
 
-## Функции
+## Build
 
-- **Локальный чат**: Сообщения видны только игрокам в определенном радиусе
-- **Глобальный чат**: Сообщения видны всем игрокам на сервере
-- **Интеграция с DiscordSRV**: Обмен сообщениями между Minecraft и Discord
-- **Система пинга**: Уведомления при упоминании игрока в чате
-- **Анти-капс**: Автоматическое определение и наказание за чрезмерное использование заглавных букв
-- **Личные сообщения**: Команда `/msg` для общения между игроками
-- **Поддержка LuckPerms**: Использование префиксов и суффиксов из LuckPerms
-- **Настройка форматов сообщений**: Гибкая настройка внешнего вида чата
+The build uses the included Gradle wrapper 9.2.1 and a JDK 25 toolchain. Plugin classes are compiled with `--release 8` (bytecode major 52), so the server JVM is selected by Paper: Java 16 for Paper 1.16.5 and Java 25 for Paper 26.1+.
 
-## Установка
+```powershell
+.\gradlew.bat clean build
+```
 
-1. Установите Java 21 или выше
-2. Поместите файл JavaChats.jar в папку `plugins` вашего сервера
-3. Перезапустите сервер
-4. Настройте конфигурационные файлы в папке `plugins/JavaChats`
+The universal release JAR is `build/libs/JavaChats-1.0.jar`. Copy it to the server `plugins/` folder.
 
-## Конфигурация
+## Commands
 
-После первого запуска плагин создаст следующие файлы:
+- `/javachats reload`
+- `/msg <player> <message>`
+- `/aihelper add <plus|minus> <message>`
 
-### config.yml
-- **chats.local**: Настройки локального чата (включить/выключить, формат, радиус, задержка)
-- **chats.global**: Настройки глобального чата (включить/выключить, формат, символ для глобального чата)
-- **messages**: Сообщения для различных действий (перезагрузка, отсутствие прав, и т.д.)
-- **ping-chat**: Настройки уведомлений при пинге (включить/выключить, звук, титры)
-- **join-quit-messages**: Настройка сообщений о входе и выходе игроков
-- **settings**: Дополнительные настройки (анти-капс и т.д.)
+LuckPerms is optional. Set `locale: ru` or `locale: en` in the root `config.yml`, then run `/javachats reload`. Runtime settings are stored in `temp/ru` and `temp/en`; each folder contains `config.yml`, `message.yml`, `AIHELPER.yml` and `AIRULES.yml`. The active profile is also exported to the plugin data root; edit the files in `temp/{locale}`, because root files are generated copies.
 
-### discord.yml (notwork)
-- **tech-role**: ID Discord роли для технических уведомлений
-- **debug**: Включить/выключить отладку
+The public API and architecture are documented in `docs/api.md` and `docs/architecture.md`. Runtime smoke-tests on real Paper 1.16.5 and 26.2 servers are required before release.
 
-## Команды
-
-- `/javachats reload` - Перезагрузка конфигурации (требует права javachats.admin)
-- `/msg <игрок> <сообщение>` - Отправка личного сообщения игроку
-
-## Зависимости
-
-- **Paper 1.21+** - Серверная платформа
-- **LuckPerms** (опционально) - Для поддержки префиксов и суффиксов
+Do not commit API keys to configuration. Use a server-local configuration and rotate any key that was exposed.

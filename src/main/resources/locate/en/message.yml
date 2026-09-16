@@ -1,0 +1,71 @@
+# support? - t.me/javaroot
+# formats
+chat:
+  local: '&7[&#F8AE5Bʟ&7] &f%prefix% &#F8AE5B%player% &f%suffix%&#F8AE5B:&f %message%' # local
+  global: '&7[&#FF8B1Dɢ&7] &f%prefix% &#FF8B1D%player% &f%suffix%&#FF8B1D:&f %message%' # global
+
+# system
+messages:
+  reload: '&aPlugin reloaded!' # reload
+  reload-failed: '&cConfiguration rejected: the previous version was kept.' # reload error
+  no-permission: '&cYou do not have permission.' # no permission
+  cooldown: '&cPlease wait before sending another message.' # cooldown
+  no-player: '&cPlayer not found.' # no player
+  only-players: '&cOnly players can send private messages.' # players only
+  usage-javachats: '&7Usage: &a/javachats reload' # usage
+  usage-msg: '&7Usage: &c/msg <player> <message>' # usage
+  cannot-msg-self: '&cYou cannot message yourself.' # self message
+
+# private messages
+pm:
+  sender: '&7 (&#FF8B1DYou&7) - &7(&#FF8B1D%player%&7) &f- &7%message%' # sender
+  receiver: '&7 (&#FF8B1D%player%&7) - &7(&#FF8B1DYou&7) &f- &7%message%' # receiver
+  hover: '&7Click to send a &#FF8B1Dprivate &7message' # hover hint
+
+# mentions
+ping:
+  highlight:
+    target: '&9' # mentioned player color
+    others: '&7' # other players color
+  title:
+    text: '&9You were pinged in chat' # title
+    sub-text: '' # subtitle
+
+# join/quit
+join-quit:
+  join:
+    - '&7[&a+&7] &a%player% &7joined the server!'
+    - '&7[&a+&7] &7Welcome &a%player%&7!'
+    - '&7[&a+&7] &a%player% &7is now with us.'
+    - '&7[&a+&7] &a%player% &7joined us.'
+    - '&7[&a+&7] &a%player% &7joined the chat!'
+  quit:
+    - '&7[&c-&7] &c%player% &7left us.'
+    - '&7[&c-&7] &c%player% &7left the server.'
+    - '&7[&c-&7] &7Goodbye, &c%player%&7!'
+    - '&7[&c-&7] &c%player% &7disconnected.'
+    - '&7[&c-&7] &7We will miss &c%player%&7.'
+
+# caps
+anti-caps:
+  title: '&cDo not use caps' # warning
+
+# spam
+anti-spam:
+  subtitle: '&cNO SPAM!!!' # warning
+
+# repeats
+anti-repeat: '&cDo not repeat messages!' # warning
+
+# AI logs
+ai-helper:
+  log-message: '&7[&cAI&7] &fPlayer &e%player% &fwrote: &7%message%'
+  log-result: '&7[&cAI&7] &fModel: &c%model_ai% &f| Probability: &e%probability% &f| Verdict: &c%verdict%'
+  verdict-punished: '&4PUNISHED'
+  verdict-clean: '&aCLEAN'
+  error: '&7[&cAI&7] &cError while requesting the neural network.'
+  subtitle: '&cPlease follow the server rules!' # warning on censoring
+  added-message: '&aMessage added to the %list% list!' # message added
+  already-added: '&cThis message is already in the list!' # already added
+  disabled: '&cAIHelper is disabled or not initialized.' # disabled
+  usage-aihelper: '&7Usage: &a/aihelper add <plus|minus> <message>' # usage

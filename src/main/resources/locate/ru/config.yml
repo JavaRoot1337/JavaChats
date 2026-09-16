@@ -1,0 +1,138 @@
+# поддержка? - t.me/javaroot
+# чаты
+chats:
+  local:
+    enable: true # локальный чат
+    range: 100 # радиус
+    cooldown: -1 # задержка (-1 выкл)
+    viewing-perms: 'javachats.local.view' # права на просмотр
+    sending-perms: 'javachats.local.send' # права на отправку
+    sound: '' # звук
+    volume: 1.0 # громкость
+    pitch: 1.0 # высота
+  global:
+    enable: true # глобальный чат
+    range: -1 # радиус (-1 безлимит)
+    symbol: '!' # символ глобала
+    cooldown: -1 # задержка (-1 выкл)
+    viewing-perms: 'javachats.global.view' # права на просмотр
+    sending-perms: 'javachats.global.send' # права на отправку
+    sound: '' # звук
+    volume: 1.0 # громкость
+    pitch: 1.0 # высота
+
+# пинг
+ping-chat:
+  enabled: true # пинг игроков
+  title:
+    fade-in: 10 # появление тиков
+    stay: 70 # показ тиков
+    fade-out: 20 # исчезновение тиков
+  sound:
+    enable: true # звук
+    name: 'minecraft:block.note_block.guitar' # название звука
+    volume: 0.7 # громкость
+    pitch: 2.0 # высота
+    category: 'MASTER' # категория
+
+# вход/выход
+join-quit:
+  join:
+    enable: true # вход
+  quit:
+    enable: true # выход
+
+# антикапс
+settings:
+  anti-caps-percent: 75 # процент капса
+  anti-caps-min-length: 4 # мин длина сообщения
+  anti-caps-fade-in-ms: 500 # появление
+  anti-caps-stay-ms: 3500 # показ
+  anti-caps-fade-out-ms: 1000 # исчезновение
+
+# антиспам
+anti-spam:
+  enable: true # антиспам
+  delay-ms: 1000 # задержка мс
+  strikes: 3 # серия
+  strike-delay-ticks: 2 # пауза
+  fade-in-ms: 100 # появление
+  stay-ms: 2000 # показ
+  fade-out-ms: 100 # исчезновение
+
+# антиповтор
+anti-repeat:
+  enable: true # вкл/выкл
+
+# ИИ хелпер
+ai-helper: #вроде как нормик, справляется, только выбирайте модель где самое маленькое время на кд между запросами - а то будет очень медленный чат
+  failure-policy: allow # поведение при полном сбое ИИ: allow или block (1 - пропускает сообщение, 2 - блокирует сообщение)
+  user-prompt-format: 'Сообщение: %message%' # запрос
+  temperature: 0.0 # температура
+  censor-timeout-seconds: 5 # таймаут цензуры
+  censor-title:
+    fade-in-ms: 100 # появление
+    stay-ms: 2000 # показ
+    fade-out-ms: 100 # исчезновение
+  block:
+    initial-delay-ticks: 20 # запуск
+    max-queue-size: 50 # очередь
+  mistral-api:
+    enable: true # сервис
+    api-key: '' # ключ
+    endpoint: 'https://api.mistral.ai/v1/chat/completions' # адрес
+    model: 'mistral-large-latest' # модель
+    timeout-seconds: 10 # таймаут
+    cooldown: 4 # задержка
+    all-logs: true # все логи
+    mode: censor # режим
+    punish-probability: 0.85 # вероятность
+
+  groq-api: #говно ебаное, не юзайте. я не знаю нахуя я 2 лишних часа своей жизни на это потратил
+    enable: false # сервис
+    api-key: '' # ключ
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions' # адрес
+    model: 'llama-3.1-8b-instant' # модель
+    timeout-seconds: 10 # таймаут
+    cooldown: 4 # задержка
+    all-logs: true # все логи
+    mode: censor # режим
+    punish-probability: 0.85 # вероятность
+
+# логи
+logs:
+  console:
+    enabled: true # консоль
+    messages:
+      config-resource-missing: 'Не найден ресурс %resource%.'
+      config-defaults-load: 'Не удалось загрузить настройки %resource%: %error%'
+      config-validation: 'Некорректные настройки: %error%'
+      chat-file-create: 'Не удалось создать файл лога чата: %error%'
+      chat-file-write: 'Не удалось записать лог чата: %error%'
+      chat-file-pattern: 'Некорректный шаблон файла лога: %error%'
+      chat-file-config: 'Некорректные настройки файла лога: папка %folder%, расширение %extension%'
+      ping-sound: 'Некорректный звук пинга: %sound%'
+      mistral-http: 'Mistral API вернул HTTP %status%.'
+      mistral-parse: 'Ошибка разбора ответа Mistral: %error%'
+      mistral-request: 'Ошибка запроса Mistral: %error%'
+      groq-http: 'Groq API вернул HTTP %status%.'
+      groq-parse: 'Ошибка разбора ответа Groq: %error%'
+      groq-request: 'Ошибка запроса Groq: %error%'
+      ai-rule-description: 'Пропущено правило ИИ без описания: %rule%'
+      ai-training-read: 'Не удалось прочитать %file%: %error%'
+      ai-training-write: 'Не удалось записать %file%: %error%'
+      mistral-config: 'Некорректная настройка Mistral API: %error%'
+      groq-config: 'Некорректная настройка Groq API: %error%'
+      moderation-request: 'Ошибка проверки сообщения ИИ: %error%'
+  chat:
+    enabled: true # файл
+    folder: logs # папка
+    file-name-pattern: 'yyyy-MM-dd-HH-mm-ss' # имя
+    file-extension: '.log' # расширение
+    time-pattern: 'yyyy-MM-dd HH:mm:ss' # время
+    line-format: '[%time%] %message%' # строка
+    censor-suffix: ' (цензура)' # цензура
+    startup: 'Лог чата запущен.' # запуск
+    local: '[ЛОКАЛЬНЫЙ] %player%: %message%' # локальный
+    global: '[ГЛОБАЛЬНЫЙ] %player%: %message%' # глобальный
+    private: '[ЛС] %sender% -> %target%: %message%' # личный

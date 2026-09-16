@@ -1,0 +1,138 @@
+# support? - t.me/javaroot
+# chats
+chats:
+  local:
+    enable: true # local chat
+    range: 100 # range
+    cooldown: -1 # delay (-1 disabled)
+    viewing-perms: 'javachats.local.view' # permission to view
+    sending-perms: 'javachats.local.send' # permission to send
+    sound: '' # sound
+    volume: 1.0 # volume
+    pitch: 1.0 # pitch
+  global:
+    enable: true # global chat
+    range: -1 # range (-1 unlimited)
+    symbol: '!' # global chat symbol
+    cooldown: -1 # delay (-1 disabled)
+    viewing-perms: 'javachats.global.view' # permission to view
+    sending-perms: 'javachats.global.send' # permission to send
+    sound: '' # sound
+    volume: 1.0 # volume
+    pitch: 1.0 # pitch
+
+# ping
+ping-chat:
+  enabled: true # ping players
+  title:
+    fade-in: 10 # fade-in ticks
+    stay: 70 # display ticks
+    fade-out: 20 # fade-out ticks
+  sound:
+    enable: true # sound
+    name: 'minecraft:block.note_block.guitar' # sound name
+    volume: 0.7 # volume
+    pitch: 2.0 # pitch
+    category: 'MASTER' # category
+
+# join/quit
+join-quit:
+  join:
+    enable: true # join
+  quit:
+    enable: true # quit
+
+# anti-caps
+settings:
+  anti-caps-percent: 75 # caps percentage
+  anti-caps-min-length: 4 # minimum message length
+  anti-caps-fade-in-ms: 500 # fade-in
+  anti-caps-stay-ms: 3500 # display time
+  anti-caps-fade-out-ms: 1000 # fade-out
+
+# anti-spam
+anti-spam:
+  enable: true # anti-spam
+  delay-ms: 1000 # delay in ms
+  strikes: 3 # strikes
+  strike-delay-ticks: 2 # pause
+  fade-in-ms: 100 # fade-in
+  stay-ms: 2000 # display time
+  fade-out-ms: 100 # fade-out
+
+# anti-repeat
+anti-repeat:
+  enable: true # enabled/disabled
+
+# AI helper
+ai-helper: # use the provider with the shortest cooldown between requests
+  failure-policy: allow # behavior on a complete AI failure: allow or block
+  user-prompt-format: 'Message: %message%' # request
+  temperature: 0.0 # temperature
+  censor-timeout-seconds: 5 # censor timeout
+  censor-title:
+    fade-in-ms: 100 # fade-in
+    stay-ms: 2000 # display time
+    fade-out-ms: 100 # fade-out
+  block:
+    initial-delay-ticks: 20 # start delay
+    max-queue-size: 50 # queue size
+  mistral-api:
+    enable: true # service
+    api-key: '' # key
+    endpoint: 'https://api.mistral.ai/v1/chat/completions' # endpoint
+    model: 'mistral-large-latest' # model
+    timeout-seconds: 10 # timeout
+    cooldown: 4 # cooldown
+    all-logs: true # all logs
+    mode: censor # mode
+    punish-probability: 0.85 # probability
+
+  groq-api: # alternative provider
+    enable: false # service
+    api-key: '' # key
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions' # endpoint
+    model: 'llama-3.1-8b-instant' # model
+    timeout-seconds: 10 # timeout
+    cooldown: 4 # cooldown
+    all-logs: true # all logs
+    mode: censor # mode
+    punish-probability: 0.85 # probability
+
+# logs
+logs:
+  console:
+    enabled: true # console
+    messages:
+      config-resource-missing: 'Resource %resource% was not found.'
+      config-defaults-load: 'Could not load defaults for %resource%: %error%'
+      config-validation: 'Invalid configuration: %error%'
+      chat-file-create: 'Could not create the chat log file: %error%'
+      chat-file-write: 'Could not write the chat log: %error%'
+      chat-file-pattern: 'Invalid chat log file pattern: %error%'
+      chat-file-config: 'Invalid chat log file settings: folder %folder%, extension %extension%'
+      ping-sound: 'Invalid ping sound: %sound%'
+      mistral-http: 'Mistral API returned HTTP %status%.'
+      mistral-parse: 'Could not parse the Mistral response: %error%'
+      mistral-request: 'Mistral request failed: %error%'
+      groq-http: 'Groq API returned HTTP %status%.'
+      groq-parse: 'Could not parse the Groq response: %error%'
+      groq-request: 'Groq request failed: %error%'
+      ai-rule-description: 'AI rule has no description and was skipped: %rule%'
+      ai-training-read: 'Could not read %file%: %error%'
+      ai-training-write: 'Could not write %file%: %error%'
+      mistral-config: 'Invalid Mistral API settings: %error%'
+      groq-config: 'Invalid Groq API settings: %error%'
+      moderation-request: 'AI message check failed: %error%'
+  chat:
+    enabled: true # file
+    folder: logs # folder
+    file-name-pattern: 'yyyy-MM-dd-HH-mm-ss' # name
+    file-extension: '.log' # extension
+    time-pattern: 'yyyy-MM-dd HH:mm:ss' # time
+    line-format: '[%time%] %message%' # line
+    censor-suffix: ' (censored)' # censor marker
+    startup: 'Chat log started.' # startup
+    local: '[LOCAL] %player%: %message%' # local
+    global: '[GLOBAL] %player%: %message%' # global
+    private: '[PM] %sender% -> %target%: %message%' # private
