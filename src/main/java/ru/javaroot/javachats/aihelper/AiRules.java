@@ -1,6 +1,7 @@
 package ru.javaroot.javachats.aihelper;
 
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import ru.javaroot.JavaChat;
@@ -24,13 +25,15 @@ public class AiRules {
     private static final int MAX_TRAINING_LINE_LENGTH = 4096;
     private static final long MAX_TRAINING_FILE_BYTES = 1024L * 1024L;
     private final JavaChat plugin;
+    private final File configDirectory;
     private final Map<String, RuleInfo> rules = new HashMap<>();
     private final List<String> trainingPlus = new ArrayList<>();
     private final List<String> trainingMinus = new ArrayList<>();
     private String systemPrompt;
 
-    public AiRules(JavaChat plugin) {
+    public AiRules(JavaChat plugin, File configDirectory) {
         this.plugin = plugin;
+        this.configDirectory = configDirectory;
     }
 
     public synchronized void load() {
@@ -38,10 +41,10 @@ public class AiRules {
     }
 
     public synchronized void load(String fallbackPrompt) {
-        File promptFile = new File(plugin.getDataFolder(), "AIRULES.yml");
+        File promptFile = new File(configDirectory, "AIRULES.yml");
         boolean promptFileExists = promptFile.exists();
         if (!promptFile.exists()) {
-            plugin.saveResource("AIRULES.yml", false);
+            throw new IllegalStateException("missing AIRULES.yml in locale profile");
         }
 
         FileConfiguration promptConfig = YamlConfiguration.loadConfiguration(promptFile);
@@ -51,12 +54,12 @@ public class AiRules {
         }
         systemPrompt = resolveSystemPrompt(promptFileExists, configuredPrompt, fallbackPrompt);
 
-        File file = new File(plugin.getDataFolder(), "AIHELPER.yml");
+        File file = new File(configDirectory, "AIHELPER.yml");
         if (!file.exists()) {
-            plugin.saveResource("AIHELPER.yml", false);
+            throw new IllegalStateException("missing AIHELPER.yml in locale profile");
         }
 
-        FileConfiguration config = YamlConfiguration.loadConfiguration(file);
+        FileConfiguration config = loadYaml(file);
         rules.clear();
         ConfigurationSection section = config.getConfigurationSection("rules");
         if (section != null) {
@@ -77,6 +80,16 @@ public class AiRules {
         trainingMinus.clear();
         trainingPlus.addAll(loadTrainingFile("learning/trainingplus.txt"));
         trainingMinus.addAll(loadTrainingFile("learning/trainingminus.txt"));
+    }
+
+    private FileConfiguration loadYaml(File file) {
+        YamlConfiguration config = new YamlConfiguration();
+        try {
+            config.load(file);
+            return config;
+        } catch (IOException | InvalidConfigurationException error) {
+            throw new IllegalStateException("could not load configuration " + file.getName(), error);
+        }
     }
 
     private String readPlainPrompt(File file) {

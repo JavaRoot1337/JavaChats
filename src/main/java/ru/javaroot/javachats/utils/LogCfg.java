@@ -15,10 +15,6 @@ public class LogCfg {
         this.plugin = plugin;
     }
 
-    public void reload() {
-        reload(plugin.getConfig());
-    }
-
     public void reload(FileConfiguration config) {
         Map<String, String> next = new HashMap<>();
         for (String path : config.getKeys(true)) {

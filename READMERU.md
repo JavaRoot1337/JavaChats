@@ -18,7 +18,7 @@ Paper-only плагин чата для Paper 1.16.5–26.2: локальный 
 - `/msg <игрок> <сообщение>`
 - `/aihelper add <plus|minus> <сообщение>`
 
-LuckPerms необязателен. Настройки находятся в `config.yml`, `message.yml`, `AIHELPER.yml` и `AIRULES.yml`.
+LuckPerms необязателен. Укажите `locale: ru` или `locale: en` в корневом `config.yml`, затем выполните `/javachats reload`. Рабочие настройки находятся в `temp/ru` и `temp/en`; в каждой папке лежат `config.yml`, `message.yml`, `AIHELPER.yml` и `AIRULES.yml`. Активный профиль также выгружается в корень папки плагина; редактируйте файлы в `temp/{locale}`, поскольку root-файлы являются копиями.
 
 Публичный API и архитектура описаны в `docs/api.md` и `docs/architecture.md`. Перед выпуском нужны runtime smoke-тесты на реальных Paper 1.16.5 и 26.2.
 

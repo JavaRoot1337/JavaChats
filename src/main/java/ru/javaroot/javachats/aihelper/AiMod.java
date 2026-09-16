@@ -12,6 +12,7 @@ import ru.javaroot.javachats.runtime.ServerScheduler;
 import ru.javaroot.javachats.utils.TextUtil;
 import ru.javaroot.javachats.utils.LogVars;
 
+import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,12 +48,12 @@ public class AiMod implements ModerationService {
 
     public AiMod(JavaChat plugin, ServerScheduler scheduler) {
         this.plugin = plugin;
-        this.rules = new AiRules(plugin);
+        this.rules = new AiRules(plugin, plugin.getDataFolder());
         this.scheduler = scheduler;
     }
 
-    public boolean reload(RuntimeConfig config) {
-        AiRules nextRules = new AiRules(plugin);
+    public boolean reload(RuntimeConfig config, File profileDirectory) {
+        AiRules nextRules = new AiRules(plugin, profileDirectory);
         try {
             nextRules.load(config.ai().systemPrompt());
         } catch (RuntimeException error) {

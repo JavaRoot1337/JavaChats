@@ -1,0 +1,24 @@
+rules:
+  flood:
+    description: "Chat flooding with two or more messages (except: spec)."
+    punish-command: "mute %player% 60m Chat flooding (AI: %probability%)"
+
+  insult:
+    description: "Insulting or humiliating another player."
+    punish-command: "mute %player% 60m Player insult (AI: %probability%)"
+
+  inadequate_chat:
+    description: "Inappropriate behavior in chat."
+    punish-command: "mute %player% 60m Inappropriate chat behavior (AI: %probability%)"
+
+  inadequate_admin:
+    description: "Inappropriate communication with the server administration."
+    punish-command: "mute %player% 240m Inappropriate communication with administration (AI: %probability%)"
+
+  inadequate_moder:
+    description: "Inappropriate communication with the moderation team."
+    punish-command: "mute %player% 120m Inappropriate communication with moderators (AI: %probability%)"
+
+  relatives:
+    description: "Insulting a player's parents or relatives."
+    punish-command: "mute %player% 120m Insulting relatives (AI: %probability%)"

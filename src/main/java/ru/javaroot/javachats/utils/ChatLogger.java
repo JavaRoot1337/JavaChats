@@ -29,14 +29,6 @@ public class ChatLogger {
         this.plugin = plugin;
     }
 
-    public synchronized void init() {
-        reload();
-    }
-
-    public synchronized void reload() {
-        reload(plugin.getConfig());
-    }
-
     public synchronized void reload(FileConfiguration config) {
         close();
         if (!config.getBoolean("logs.chat.enabled")) {

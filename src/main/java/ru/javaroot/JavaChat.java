@@ -20,12 +20,12 @@ import ru.javaroot.javachats.integration.MetaProvider;
 import ru.javaroot.javachats.utils.ChatLogger;
 import ru.javaroot.javachats.utils.LogCfg;
 import ru.javaroot.javachats.config.MessageSnapshot;
+import ru.javaroot.javachats.config.LocaleConfigManager;
 import ru.javaroot.javachats.config.RuntimeConfig;
 import ru.javaroot.javachats.runtime.ServerScheduler;
 import ru.javaroot.javachats.service.PrivateMessages;
 import ru.javaroot.javachats.utils.LogVars;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -43,13 +43,14 @@ public class JavaChat extends JavaPlugin {
     private volatile MessageSnapshot messageSnapshot;
     private volatile JavaChatsApi api;
     private PrivateMessages privateMessages;
+    private LocaleConfigManager localeConfigManager;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        saveDefaultMessageConfig();
+        localeConfigManager = new LocaleConfigManager(this);
         logs = new LogCfg(this);
-        logs.reload();
+        logs.reload(localeConfigManager.bundledConfig("ru"));
         scheduler = new ServerScheduler(this);
 
         org.bukkit.plugin.PluginManager pm = getServer().getPluginManager();
@@ -58,6 +59,7 @@ public class JavaChat extends JavaPlugin {
         aiMod = new AiMod(this, scheduler);
         chatList = new ChatList(this, scheduler);
         privateMessages = new PrivateMessages(this, scheduler);
+        chatLogger = new ChatLogger(this);
         if (!reloadConfigs()) {
             getServer().getPluginManager().disablePlugin(this);
             return;
@@ -85,9 +87,6 @@ public class JavaChat extends JavaPlugin {
         };
         Bukkit.getServicesManager().register(JavaChatsApi.class, api, this, ServicePriority.Normal);
 
-        chatLogger = new ChatLogger(this);
-        chatLogger.init();
-
         registerCommands();
 
         pm.registerEvents(new ChatEventList(chatList), this);
@@ -114,24 +113,24 @@ public class JavaChat extends JavaPlugin {
     }
 
     public boolean reloadConfigs() {
-        File messageFile = new File(getDataFolder(), "message.yml");
-        File configFile = new File(getDataFolder(), "config.yml");
         RuntimeConfig newRuntimeConfig;
         MessageSnapshot newMessageSnapshot;
         FileConfiguration newConfig;
+        LocaleConfigManager.ActiveConfig activeConfig;
         try {
-            newConfig = YamlConfiguration.loadConfiguration(configFile);
-            loadConfigDefaults(newConfig);
-            FileConfiguration newMessageConfig = YamlConfiguration.loadConfiguration(messageFile);
+            reloadConfig();
+            activeConfig = localeConfigManager.load();
+            newConfig = activeConfig.config();
+            loadConfigDefaults(newConfig, activeConfig.locale());
             newRuntimeConfig = RuntimeConfig.from(newConfig);
-            newMessageSnapshot = MessageSnapshot.from(newMessageConfig);
+            newMessageSnapshot = MessageSnapshot.from(activeConfig.message());
             newRuntimeConfig.validate();
             newMessageSnapshot.validate();
         } catch (RuntimeException error) {
             logs.warning("config-validation", LogVars.of("error", String.valueOf(error.getMessage())));
             return false;
         }
-        if (aiMod != null && !aiMod.reload(newRuntimeConfig)) {
+        if (aiMod != null && !aiMod.reload(newRuntimeConfig, activeConfig.directory())) {
             return false;
         }
         runtimeConfig = newRuntimeConfig;
@@ -140,15 +139,14 @@ public class JavaChat extends JavaPlugin {
         if (chatLogger != null) {
             chatLogger.reload(newConfig);
         }
-        reloadConfig();
-        loadConfigDefaults(getConfig());
         return true;
     }
 
-    private void loadConfigDefaults(FileConfiguration config) {
-        try (InputStream stream = getResource("config.yml")) {
+    private void loadConfigDefaults(FileConfiguration config, String locale) {
+        try (InputStream stream = getResource("locate/" + locale + "/config.yml")) {
             if (stream == null) {
-                logs.warning("config-resource-missing", LogVars.of("resource", "config.yml"));
+                logs.warning("config-resource-missing", LogVars.of(
+                        "resource", "locate/" + locale + "/config.yml"));
                 return;
             }
             FileConfiguration defaults = YamlConfiguration.loadConfiguration(
@@ -156,7 +154,7 @@ public class JavaChat extends JavaPlugin {
             config.addDefaults(defaults);
         } catch (IOException e) {
             logs.warning("config-defaults-load", LogVars.of(
-                    "resource", "config.yml",
+                    "resource", "locate/" + locale + "/config.yml",
                     "error", String.valueOf(e.getMessage())));
         }
     }
@@ -177,13 +175,6 @@ public class JavaChat extends JavaPlugin {
             AiHelperCmd cmd = new AiHelperCmd(this);
             aihelper.setExecutor(cmd);
             aihelper.setTabCompleter(cmd);
-        }
-    }
-
-    private void saveDefaultMessageConfig() {
-        File file = new File(getDataFolder(), "message.yml");
-        if (!file.exists()) {
-            saveResource("message.yml", false);
         }
     }
 
