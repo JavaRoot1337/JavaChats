@@ -15,6 +15,11 @@ messages:
   usage-javachats: '&7Использование: &a/javachats reload' # использование
   usage-msg: '&7Использование: &c/msg <игрок> <сообщение>' # использование
   cannot-msg-self: '&cНельзя писать самому себе.' # самому себе
+  update-available: |
+    Доступно обновление!
+    Текущая версия: %current%
+    Новая версия: %latest%
+    GitHub: %github%
 
 # лс
 pm:

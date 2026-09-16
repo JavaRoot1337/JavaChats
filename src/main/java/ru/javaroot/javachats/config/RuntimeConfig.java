@@ -15,9 +15,10 @@ public final class RuntimeConfig {
     private final boolean antiRepeat;
     private final Ai ai;
     private final String censorSuffix;
+    private final boolean updateCheck;
 
     public RuntimeConfig(Channel local, Channel global, Ping ping, JoinQuit joinQuit, AntiCaps antiCaps,
-            AntiSpam antiSpam, boolean antiRepeat, Ai ai, String censorSuffix) {
+            AntiSpam antiSpam, boolean antiRepeat, Ai ai, String censorSuffix, boolean updateCheck) {
         this.local = local;
         this.global = global;
         this.ping = ping;
@@ -27,6 +28,7 @@ public final class RuntimeConfig {
         this.antiRepeat = antiRepeat;
         this.ai = ai;
         this.censorSuffix = censorSuffix;
+        this.updateCheck = updateCheck;
     }
 
     public static RuntimeConfig from(FileConfiguration cfg) {
@@ -46,7 +48,8 @@ public final class RuntimeConfig {
                         cfg.getInt("anti-spam.strikes"), cfg.getLong("anti-spam.strike-delay-ticks"),
                         cfg.getLong("anti-spam.fade-in-ms"), cfg.getLong("anti-spam.stay-ms"),
                         cfg.getLong("anti-spam.fade-out-ms")),
-                cfg.getBoolean("anti-repeat.enable"), Ai.from(cfg), cfg.getString("logs.chat.censor-suffix"));
+                cfg.getBoolean("anti-repeat.enable"), Ai.from(cfg), cfg.getString("logs.chat.censor-suffix"),
+                cfg.getBoolean("update-check"));
     }
 
     public Channel local() { return local; }
@@ -58,6 +61,7 @@ public final class RuntimeConfig {
     public boolean antiRepeat() { return antiRepeat; }
     public Ai ai() { return ai; }
     public String censorSuffix() { return censorSuffix; }
+    public boolean updateCheck() { return updateCheck; }
 
     public void validate() {
         validateChannel(local, "chats.local");

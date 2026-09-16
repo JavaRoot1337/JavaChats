@@ -1,4 +1,6 @@
 # поддержка? - t.me/javaroot
+update-check: true
+
 # чаты
 chats:
   local:

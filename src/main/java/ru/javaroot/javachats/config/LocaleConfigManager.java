@@ -20,6 +20,8 @@ import java.util.Locale;
 
 public class LocaleConfigManager {
     private static final String DEFAULT_LOCALE = "ru";
+    private static final String RU_SUPPORT_COMMENT = "# поддержка? - t.me/javaroot";
+    private static final String EN_SUPPORT_COMMENT = "# support? - t.me/javaroot";
     private static final List<String> LOCALES = Collections.unmodifiableList(Arrays.asList("ru", "en"));
     private static final List<String> CONFIG_FILES = Collections.unmodifiableList(Arrays.asList(
             "config.yml", "message.yml", "AIRULES.yml", "AIHELPER.yml"));
@@ -81,6 +83,7 @@ public class LocaleConfigManager {
                         copyResource(profileLocale, fileName, target);
                     }
                 }
+                ensureSupportComment(profileDirectory, profileLocale);
             } catch (IOException error) {
                 throw new IllegalStateException("could not prepare locale profile " + profileLocale, error);
             }
@@ -116,7 +119,8 @@ public class LocaleConfigManager {
                 Path target = new File(dataFolder, fileName).toPath();
                 if (fileName.equals("config.yml")) {
                     String content = new String(Files.readAllBytes(source), StandardCharsets.UTF_8);
-                    String rootContent = "locale: " + locale + "\n" + content;
+                    String rootContent = content + (content.endsWith("\n") ? "" : "\n")
+                            + "locale: " + locale + "\n";
                     Files.write(target, rootContent.getBytes(StandardCharsets.UTF_8));
                 } else {
                     Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
@@ -124,6 +128,19 @@ public class LocaleConfigManager {
             }
         } catch (IOException error) {
             throw new IllegalStateException("could not materialize locale profile " + locale, error);
+        }
+    }
+
+    private void ensureSupportComment(File profileDirectory, String locale) throws IOException {
+        String comment = locale.equals("ru") ? RU_SUPPORT_COMMENT : EN_SUPPORT_COMMENT;
+        for (String fileName : Arrays.asList("config.yml", "message.yml")) {
+            Path file = new File(profileDirectory, fileName).toPath();
+            String content = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+            if (content.contains(comment)) {
+                continue;
+            }
+            String updated = comment + "\n" + content;
+            Files.write(file, updated.getBytes(StandardCharsets.UTF_8));
         }
     }
 

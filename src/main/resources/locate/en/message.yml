@@ -15,6 +15,11 @@ messages:
   usage-javachats: '&7Usage: &a/javachats reload' # usage
   usage-msg: '&7Usage: &c/msg <player> <message>' # usage
   cannot-msg-self: '&cYou cannot message yourself.' # self message
+  update-available: |
+    Update available!
+    Current version: %current%
+    New version: %latest%
+    GitHub: %github%
 
 # private messages
 pm:

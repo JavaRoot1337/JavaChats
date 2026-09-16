@@ -24,6 +24,7 @@ import ru.javaroot.javachats.config.LocaleConfigManager;
 import ru.javaroot.javachats.config.RuntimeConfig;
 import ru.javaroot.javachats.runtime.ServerScheduler;
 import ru.javaroot.javachats.service.PrivateMessages;
+import ru.javaroot.javachats.update.gitupdater;
 import ru.javaroot.javachats.utils.LogVars;
 
 import java.io.IOException;
@@ -33,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 
 public class JavaChat extends JavaPlugin {
     private static final int BSTATS_PLUGIN_ID = 34054;
+    private static final long UPDATE_CHECK_DELAY_TICKS = 60L;
     private MetaProvider metaProvider;
     private AiMod aiMod;
     private ChatLogger chatLogger;
@@ -44,6 +46,7 @@ public class JavaChat extends JavaPlugin {
     private volatile JavaChatsApi api;
     private PrivateMessages privateMessages;
     private LocaleConfigManager localeConfigManager;
+    private gitupdater updateChecker;
 
     @Override
     public void onEnable() {
@@ -52,6 +55,7 @@ public class JavaChat extends JavaPlugin {
         logs = new LogCfg(this);
         logs.reload(localeConfigManager.bundledConfig("ru"));
         scheduler = new ServerScheduler(this);
+        updateChecker = new gitupdater(this, scheduler, this::announceUpdate);
 
         org.bukkit.plugin.PluginManager pm = getServer().getPluginManager();
         metaProvider = IntegrationLoader.loadLuckPerms();
@@ -92,6 +96,9 @@ public class JavaChat extends JavaPlugin {
         pm.registerEvents(new ChatEventList(chatList), this);
         pm.registerEvents(new ConnectionList(this, chatList), this);
         new Metrics(this, BSTATS_PLUGIN_ID);
+        if (runtimeConfig.updateCheck()) {
+            scheduler.runServerLater(updateChecker::checkForUpdates, UPDATE_CHECK_DELAY_TICKS);
+        }
     }
 
     @Override
@@ -105,6 +112,9 @@ public class JavaChat extends JavaPlugin {
         if (chatLogger != null) {
             chatLogger.close();
         }
+        if (updateChecker != null) {
+            updateChecker.close();
+        }
         if (scheduler != null) {
             scheduler.close();
         }
@@ -113,6 +123,7 @@ public class JavaChat extends JavaPlugin {
     }
 
     public boolean reloadConfigs() {
+        boolean updateCheckWasEnabled = runtimeConfig != null && runtimeConfig.updateCheck();
         RuntimeConfig newRuntimeConfig;
         MessageSnapshot newMessageSnapshot;
         FileConfiguration newConfig;
@@ -121,7 +132,8 @@ public class JavaChat extends JavaPlugin {
             reloadConfig();
             activeConfig = localeConfigManager.load();
             newConfig = activeConfig.config();
-            loadConfigDefaults(newConfig, activeConfig.locale());
+            loadDefaults(newConfig, activeConfig.locale(), "config.yml");
+            loadDefaults(activeConfig.message(), activeConfig.locale(), "message.yml");
             newRuntimeConfig = RuntimeConfig.from(newConfig);
             newMessageSnapshot = MessageSnapshot.from(activeConfig.message());
             newRuntimeConfig.validate();
@@ -139,14 +151,18 @@ public class JavaChat extends JavaPlugin {
         if (chatLogger != null) {
             chatLogger.reload(newConfig);
         }
+        if (updateChecker != null && !updateCheckWasEnabled && newRuntimeConfig.updateCheck()) {
+            scheduler.runServerLater(updateChecker::checkForUpdates, UPDATE_CHECK_DELAY_TICKS);
+        }
         return true;
     }
 
-    private void loadConfigDefaults(FileConfiguration config, String locale) {
-        try (InputStream stream = getResource("locate/" + locale + "/config.yml")) {
+    private void loadDefaults(FileConfiguration config, String locale, String fileName) {
+        String resource = "locate/" + locale + "/" + fileName;
+        try (InputStream stream = getResource(resource)) {
             if (stream == null) {
                 logs.warning("config-resource-missing", LogVars.of(
-                        "resource", "locate/" + locale + "/config.yml"));
+                        "resource", resource));
                 return;
             }
             FileConfiguration defaults = YamlConfiguration.loadConfiguration(
@@ -154,8 +170,26 @@ public class JavaChat extends JavaPlugin {
             config.addDefaults(defaults);
         } catch (IOException e) {
             logs.warning("config-defaults-load", LogVars.of(
-                    "resource", "locate/" + locale + "/config.yml",
+                    "resource", resource,
                     "error", String.valueOf(e.getMessage())));
+        }
+    }
+
+    private void announceUpdate(gitupdater checker) {
+        if (runtimeConfig == null || !runtimeConfig.updateCheck()) {
+            return;
+        }
+        String template = messageSnapshot.text("messages.update-available");
+        if (template == null || template.trim().isEmpty()) {
+            return;
+        }
+        String message = template.replace("%current%", checker.getCurrentVersion())
+                .replace("%latest%", checker.getLatestVersion())
+                .replace("%github%", checker.getReleaseUrl()).trim();
+        for (String line : message.split("\\r?\\n")) {
+            if (!line.trim().isEmpty()) {
+                getLogger().info(line);
+            }
         }
     }
 

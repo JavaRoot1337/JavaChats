@@ -16,7 +16,8 @@ public final class MessageSnapshot {
             "ping.highlight.others", "ping.title.text", "ping.title.sub-text", "anti-caps.title",
             "anti-spam.subtitle", "anti-repeat", "ai-helper.log-message", "ai-helper.log-result",
             "ai-helper.verdict-punished", "ai-helper.verdict-clean", "ai-helper.error", "ai-helper.subtitle",
-            "ai-helper.added-message", "ai-helper.already-added", "ai-helper.disabled", "ai-helper.usage-aihelper"));
+            "ai-helper.added-message", "ai-helper.already-added", "ai-helper.disabled", "ai-helper.usage-aihelper",
+            "messages.update-available"));
     private static final List<String> LIST_PATHS = Collections.unmodifiableList(
             Arrays.asList("join-quit.join", "join-quit.quit"));
 
