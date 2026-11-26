@@ -1,29 +1,53 @@
 # JavaChats
 
-Плагин чата для **Paper и Folia 1.21–26.3**: локальный и глобальный чат, личные сообщения, `@упоминания` со звуком и титлом, а также асинхронная AI-модерация.
+Плагин чата для Paper и Folia `1.21–26.3`: локальный и глобальный каналы, личные сообщения, `@упоминания` со звуком и титлом, асинхронная AI-модерация.
+
+## Совместимость
+
+| Параметр | Значение |
+| --- | --- |
+| Ядро | Paper, Folia (`folia-supported: true`) |
+| Minecraft | `1.21 – 26.3` |
+| Java | `21+` |
+| Опционально | `LuckPerms` |
 
 ## Сборка
-
-Сборка использует Gradle wrapper 9.2.1 (Kotlin DSL) и Java 21 (`--release 21`), а задача `compileModernJava` дополнительно проверяет компиляцию под Paper `26.2.build.121-stable`:
 
 ```powershell
 .\gradlew.bat clean build
 ```
 
-Итоговый JAR находится в `build/libs/JavaChats-2.0.jar`. Поместите его в папку `plugins/` сервера.
+Итоговый JAR: `build/libs/JavaChats-2.0.jar`.
 
 ## Команды
 
-- `/javachats reload` — перезагрузить конфиг и активный профиль локали (`javachats.admin`)
-- `/msg <игрок> <сообщение>` (алиасы: `/tell`, `/w`) — личное сообщение (`javachats.msg`)
-- `/aihelper add <plus|minus> <сообщение>` — добавить пример в обучающую выборку (`javachats.admin`)
+| Команда | Действие | Право |
+| --- | --- | --- |
+| `/javachats reload` | Перезагрузить конфиг и профиль локали | `javachats.admin` |
+| `/msg <игрок> <сообщение>` (`/tell`, `/w`) | Отправить личное сообщение | `javachats.msg` |
+| `/aihelper add <plus\|minus> <сообщение>` | Добавить пример для AI-модерации | `javachats.admin` |
+
+## Права
+
+| Право | Назначение | По умолчанию |
+| --- | --- | --- |
+| `javachats.local.view` | Чтение локального чата | всем |
+| `javachats.local.send` | Отправка в локальный чат | всем |
+| `javachats.global.view` | Чтение глобального чата | всем |
+| `javachats.global.send` | Отправка в глобальный чат | всем |
+| `javachats.msg` | Использование `/msg`, `/tell`, `/w` | всем |
+| `javachats.ai.log` | Просмотр логов AI-модерации | op |
+| `javachats.admin` | Управление плагином и reload | op |
 
 ## Конфигурация
 
-`LuckPerms` необязателен (`paper-plugin.yml`, `required: false`). Укажите `locale: ru` или `locale: en` в корневом `config.yml` и выполните `/javachats reload`.
+Укажите `locale: ru` или `locale: en` в `plugins/JavaChats/config.yml` и выполните `/javachats reload`.
 
-Профили настроек хранятся в `temp/ru` и `temp/en` (`config.yml`, `message.yml`, `AIHELPER.yml`, `AIRULES.yml`). При загрузке файлы активной локали копируются в корень папки плагина, поэтому редактируйте файлы внутри `temp/{locale}`.
+Профили локалей лежат в `locate/ru` и `locate/en` (`config.yml`, `message.yml`, `AIHELPER.yml`, `AIRULES.yml`). Храните API-ключи только в локальном конфиге сервера.
 
-Публичный API и архитектура под Folia описаны в [docs/api.md](docs/api.md) и [docs/architecture.md](docs/architecture.md).
+## Документация
 
-Не храните API-ключи в репозитории — задавайте их только в локальном конфиге сервера.
+- [Публичный API](docs/apiru.md)
+- [Архитектура](docs/architectureru.md)
+
+[English documentation](README.md)
