@@ -1,13 +1,16 @@
 package ru.javaroot.javachats.api;
 
+/**
+ * Корневой контракт публичного API плагина JavaChats.
+ */
 public interface JavaChatsApi {
-    String API_VERSION = "2";
+    String API_VERSION = "2.1";
 
     String apiVersion();
 
-    ChatService chat();
+    ChatSvc chat();
 
-    PrivateMessageService privateMessages();
+    PmSvc privateMessages();
 
-    ModerationService moderation();
+    ModSvc moderation();
 }

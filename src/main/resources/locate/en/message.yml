@@ -57,7 +57,7 @@ anti-caps:
 
 # spam
 anti-spam:
-  subtitle: '&cNO SPAM!!!' # warning
+  subtitle: '&cNo spam.' # warning
 
 # repeats
 anti-repeat: '&cDo not repeat messages!' # warning

@@ -1,40 +1,29 @@
 # Архитектура JavaChats
 
-## Цель совместимости
+## Целевая матрица
 
-JavaChats выпускается одним Paper-only JAR для Paper 1.16.5–26.2. Исходники компилируются с `--release 8`, поэтому классы плагина имеют bytecode major 52. Версия JVM выбирается сервером: для Paper 1.16.5 нужна Java 16, для Paper 26.1+ — Java 25.
+- **Версии Minecraft:** `1.21–26.3` (`api-version: '1.21'`, `compileModernJava` проверяет `26.2.build.121-stable`).
+- **Ядро:** Paper и Folia (`folia-supported: true` в `paper-plugin.yml`).
+- **Java:** Java 21 (`--release 21`), без легаси-костылей под 1.16.5 и без шейдинга Adventure/Gson.
+- **Команды:** Paper Brigadier через `LifecycleEvents.COMMANDS`.
 
-`plugin.yml` использует `api-version: '1.16'`. LuckPerms остаётся optional через `softdepend`; плагин не загружает внешние библиотеки через descriptor. Gson включён в release JAR с relocation, чтобы не зависеть от версии Gson на сервере.
+## Пакеты (`ru.javaroot.javachats`)
 
-## Границы доменов
+- `JavaChats` — точка входа `JavaPlugin`, регистрация прав, Brigadier-команд, слушателей и API.
+- `api` — публичный контракт `JavaChatsApi`, `ApiProvider` и `record`-модели.
+- `plat` — `Exec` (обёртка над `AsyncScheduler`, `GlobalRegionScheduler`, `RegionScheduler`, `EntityScheduler`) и `Hex` (парсер `&` и `&#RRGGBB` в Adventure `Component`).
+- `cfg` — `Cfg`, `Msg`, `LogCfg`, `LocaleMgr` (неизменяемые снимки с валидацией до замены при `reload`).
+- `hook` — изолированный адаптер `LuckPerms` (`LpHook`, фолбэк `NoopMeta`), загружаемый только при `isPluginEnabled("LuckPerms")`.
+- `ai` — `AiSvc`, `AiRules`, `AiClient` (`java.net.http.HttpClient`), единый `OpenAiProv` для Mistral и Groq.
+- `chat` — `ChatEng`, `ChatPing`, `PmSvcImpl`, `ChatLog` (асинхронный ограниченный файловый логгер).
+- `list` — `ChatList` (`AsyncChatEvent`) и `ConnList` (`PlayerJoinEvent` / `PlayerQuitEvent` с очисткой кэшей).
+- `cmd` — Brigadier-команды `JavaChatsCmd`, `MsgCmd`, `AiCmd`.
+- `upd` — `GhUpd` и `Ver` с поддержкой годовой нумерации (`26.x > 1.21.x`).
 
-- `JavaChat` — bootstrap, регистрация команд и listeners, создание зависимостей и lifecycle
-- `config` — загрузка YAML и immutable snapshots; reload заменяет snapshots только после успешной сборки
-- `application` — use cases чата, личных сообщений и moderation pipeline
-- `domain` — immutable request/result/decision/policy-модели без Bukkit API
-- `adapter.bukkit` — AsyncChatEvent, commands, recipients, player delivery и scheduler facade
-- `api` — стабильные Java 8 value-классы и публичные фасады `JavaChatsApi`
-- `aihelper` — очередь AI, провайдеры, цензура, таймауты и остановка worker/executor
-- `runtime` — фасад над обычным `BukkitScheduler` с tracking и cancel на disable
-- `integration` — optional adapter LuckPerms и пустой fallback без зависимости от его runtime
-- `logging` и `utils` — асинхронный chat log, шаблоны сообщений и общие преобразования
+## Модель потоков на Folia
 
-Главный класс не содержит бизнес-правил чата. Bukkit adapter преобразует событие в immutable вход, а API и команды делегируют application-коду. Текущий переход сохраняет существующие имена классов до завершения API v2 migration.
-
-## Потоки и владение состоянием
-
-Bukkit/Paper API, игроки, мир, инвентари и отправка сообщений выполняются через server thread. HTTP, AI parsing и файловая запись выполняются асинхронно. `ServerScheduler` использует совместимый с 1.16.5 `BukkitScheduler`; region/entity scheduler не используется.
-
-Долгоживущие карты используют UUID. На disable отменяются tracked tasks, останавливаются AI providers и timeout executor, закрывается logging executor и сбрасывается runtime state. Публичный API может быть вызван из любого потока, но Bukkit-доставка возвращается на scheduler плагина.
-
-## Конфигурация и reload
-
-Ресурсы `config.yml`, `message.yml`, `AIHELPER.yml` и `AIRULES.yml` сохраняют текущие имена и ключи. `ai-helper.failure-policy` принимает `allow` или `block`. YAML не используется как база данных. Runtime не получает mutable `FileConfiguration`: конфигурация преобразуется в snapshots и проверяется до замены. При ошибке новая конфигурация не заменяет последнюю рабочую.
-
-## ADR-001: единый Paper JAR и compile-floor 1.16.5
-
-Решение: нижним compile floor является Paper API `1.16.5-R0.1-SNAPSHOT`, release bytecode — Java 8, а отдельная задача `compileModernJava` проверяет исходники против Paper `26.2.build.121-stable`.
-
-Причины: descriptor с `api-version: '26.2'` блокирует старые серверы, а region scheduler отсутствует в 1.16.5. Общий BukkitScheduler и публичные Adventure API доступны на нижнем floor и сохраняют единый код.
-
-Ограничения: runtime smoke-test должен быть выполнен на реальных Paper 1.16.5 и 26.2. Compile-check не доказывает работу всех игровых сценариев, а отсутствующая локальная серверная среда не позволяет подтвердить загрузку, chat delivery и cleanup автоматически.
+В проекте нет вызовов `Bukkit.getScheduler()` и `BukkitRunnable`:
+- доставка сообщений, проверка прав, локальный радиус чата, `playSound`, `showTitle` и `strikeLightningEffect` выполняются в `EntityScheduler` целевого игрока;
+- консольные наказания AI-модерации и проверка обновлений выполняются в `GlobalRegionScheduler`;
+- HTTP-запросы к AI/GitHub и запись логов чата работают асинхронно без блокировки региональных тиков;
+- при `onDisable()` отменяются отслеживаемые задачи, останавливаются HTTP-пулы и закрывается очередь `ChatLog`.

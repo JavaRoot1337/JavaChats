@@ -1,0 +1,13 @@
+name: JavaChats
+version: '${version}'
+main: ru.javaroot.javachats.JavaChats
+api-version: '1.21'
+folia-supported: true
+description: Чаты, пинги и AI-модерация для Paper и Folia
+authors: [JavaRoot]
+dependencies:
+  server:
+    LuckPerms:
+      load: BEFORE
+      required: false
+      join-classpath: true

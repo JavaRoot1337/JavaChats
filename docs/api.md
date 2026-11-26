@@ -1,11 +1,19 @@
-# JavaChats API v2
+# JavaChats API v2.1
 
-Публичная точка входа: `JavaChat#getApi()`.
+Точки входа:
+- `ApiProvider.get()` (проверяйте готовность через `ApiProvider.isAvailable()`)
+- `Bukkit.getServicesManager().load(JavaChatsApi.class)`
 
-`api.chat()` предоставляет операции `publish(ChatRequest)`, `registerFilter(ChatFilter)` и `filters()`. `ChatRequest`, `ChatDecision`, `ChatResult`, `PrivateMessageRequest`, `PrivateMessageResult` и `ModerationResult` — immutable Java 8 classes с record-style accessor-методами и фабриками. `ModerationResult.available()` показывает, был ли получен достоверный ответ провайдера.
+## Состав API
 
-`publish` можно вызывать из любого потока. Каждый вызов `ChatFilter.inspect` и запуск следующего фильтра выполняются на server thread. Фильтр получает immutable request и возвращает `CompletionStage<ChatDecision>`; его асинхронный callback не должен обращаться к Bukkit state. Исключение, `null` stage или `null` decision завершают публикацию со статусом `UNAVAILABLE`.
+- `api.chat()` (`ChatSvc`) — публикация сообщений `publish(ChatReq)`, регистрация фильтров `registerFilter(ChatFilter)` и просмотр списка `filters()`.
+- `api.privateMessages()` (`PmSvc`) — отправка личных сообщений `send(PmReq)` с доставкой через `EntityScheduler` отправителя и получателя.
+- `api.moderation()` (`ModSvc`) — асинхронная AI-проверка `moderate(UUID, String)` и статус `isEnabled()`.
 
-`api.privateMessages()` возвращает результаты `SENT`, `RECIPIENT_OFFLINE` или `UNAVAILABLE`. `api.moderation()` асинхронно использует AI providers и возвращает вероятность, правило, найденные слова и optional censored message.
+Модели `ChatReq`, `ChatDec`, `ChatRes`, `PmReq`, `PmRes`, `ModRes` реализованы как неизменяемые Java 21 `record`. `ModRes.available()` отражает доступность AI-провайдеров на момент проверки.
 
-Совместимость: Paper-only 1.16.5–26.2, bytecode Java 8. Команды, permissions, aliases, YAML-ключи, `plugin.yml` и LuckPerms soft dependency сохранены. Внутренние concrete-классы и mutable config facade не являются частью API v2.
+## Контракт потоков и фильтров
+
+`publish(ChatReq)` и `send(PmReq)` безопасны для вызова из любого потока на Paper и Folia. Каждый `ChatFilter` получает неизменяемый `ChatReq` и возвращает `CompletionStage<ChatDec>`. Исключение, `null`-результат или `null` `CompletionStage` завершают публикацию со статусом `ChatRes.Status.UNAVAILABLE`.
+
+Совместимость: Paper и Folia `1.21–26.3`, Java 21+, `paper-plugin.yml` (`folia-supported: true`), `LuckPerms` опционален.
