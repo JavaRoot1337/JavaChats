@@ -39,7 +39,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:$junitVersion")
     testImplementation("io.papermc.paper:paper-api:$paperApiVersion")
     testImplementation("net.luckperms:api:$luckpermsApiVersion")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:$junitVersion")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks {
