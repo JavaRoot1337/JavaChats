@@ -4,4 +4,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'JavaChats'
+rootProject.name = "JavaChats"
