@@ -1,25 +1,29 @@
 # JavaChats
 
-Paper-only плагин чата для Paper 1.16.5–26.2: локальный и глобальный чат, ЛС, упоминания и AI-модерация.
+Плагин чата для **Paper и Folia 1.21–26.3**: локальный и глобальный чат, личные сообщения, `@упоминания` со звуком и титлом, а также асинхронная AI-модерация.
 
 ## Сборка
 
-Сборка использует Gradle wrapper 9.2.1 и JDK 25. Классы плагина компилируются с `--release 8` (bytecode major 52), поэтому JVM выбирается сервером: Java 16 для Paper 1.16.5 и Java 25 для Paper 26.1+.
+Сборка использует Gradle wrapper 9.2.1 (Kotlin DSL) и Java 21 (`--release 21`), а задача `compileModernJava` дополнительно проверяет компиляцию под Paper `26.2.build.121-stable`:
 
 ```powershell
 .\gradlew.bat clean build
 ```
 
-Универсальный release JAR находится в `build/libs/JavaChats-1.0.jar`. Переместите его в папку `plugins/` сервера.
+Итоговый JAR находится в `build/libs/JavaChats-2.0.jar`. Поместите его в папку `plugins/` сервера.
 
 ## Команды
 
-- `/javachats reload`
-- `/msg <игрок> <сообщение>`
-- `/aihelper add <plus|minus> <сообщение>`
+- `/javachats reload` — перезагрузить конфиг и активный профиль локали (`javachats.admin`)
+- `/msg <игрок> <сообщение>` (алиасы: `/tell`, `/w`) — личное сообщение (`javachats.msg`)
+- `/aihelper add <plus|minus> <сообщение>` — добавить пример в обучающую выборку (`javachats.admin`)
 
-LuckPerms необязателен. Укажите `locale: ru` или `locale: en` в корневом `config.yml`, затем выполните `/javachats reload`. Рабочие настройки находятся в `temp/ru` и `temp/en`; в каждой папке лежат `config.yml`, `message.yml`, `AIHELPER.yml` и `AIRULES.yml`. Активный профиль также выгружается в корень папки плагина; редактируйте файлы в `temp/{locale}`, поскольку root-файлы являются копиями.
+## Конфигурация
 
-Публичный API и архитектура описаны в `docs/api.md` и `docs/architecture.md`. Перед выпуском нужны runtime smoke-тесты на реальных Paper 1.16.5 и 26.2.
+`LuckPerms` необязателен (`paper-plugin.yml`, `required: false`). Укажите `locale: ru` или `locale: en` в корневом `config.yml` и выполните `/javachats reload`.
 
-Не добавляйте API-ключи в репозиторий. Используйте локальную конфигурацию сервера и заменяйте раскрытые ключи.
+Профили настроек хранятся в `temp/ru` и `temp/en` (`config.yml`, `message.yml`, `AIHELPER.yml`, `AIRULES.yml`). При загрузке файлы активной локали копируются в корень папки плагина, поэтому редактируйте файлы внутри `temp/{locale}`.
+
+Публичный API и архитектура под Folia описаны в [docs/api.md](docs/api.md) и [docs/architecture.md](docs/architecture.md).
+
+Не храните API-ключи в репозитории — задавайте их только в локальном конфиге сервера.
