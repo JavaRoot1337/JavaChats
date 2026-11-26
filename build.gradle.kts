@@ -27,10 +27,12 @@ val modernPaperApi by configurations.creating
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:$paperApiVersion")
+    compileOnly("org.jetbrains:annotations:24.1.0")
     compileOnly("net.luckperms:api:$luckpermsApiVersion")
     implementation("org.bstats:bstats-bukkit:$bstatsVersion")
 
     modernPaperApi("io.papermc.paper:paper-api:$modernPaperApiVersion")
+    modernPaperApi("org.jetbrains:annotations:24.1.0")
     modernPaperApi("net.luckperms:api:$luckpermsApiVersion")
     modernPaperApi("org.bstats:bstats-bukkit:$bstatsVersion")
 
