@@ -1,29 +1,53 @@
 # JavaChats
 
-Chat plugin for **Paper & Folia 1.21–26.3**: local and global chat, private messages, `@mentions` with sounds and titles, and async AI moderation.
+Chat plugin for Paper and Folia `1.21–26.3`: local and global channels, private messages, `@mentions` with sound/title alerts, and async AI moderation.
+
+## Compatibility
+
+| Parameter | Value |
+| --- | --- |
+| Core | Paper, Folia (`folia-supported: true`) |
+| Minecraft | `1.21 – 26.3` |
+| Java | `21+` |
+| Optional | `LuckPerms` |
 
 ## Build
-
-The build uses Gradle wrapper 9.2.1 (Kotlin DSL) and a Java 21 toolchain (`--release 21`), with `compileModernJava` verifying compatibility against Paper `26.2.build.121-stable`:
 
 ```powershell
 .\gradlew.bat clean build
 ```
 
-The release JAR is `build/libs/JavaChats-2.0.jar`. Copy it to the server `plugins/` folder.
+Output JAR: `build/libs/JavaChats-2.0.jar`.
 
 ## Commands
 
-- `/javachats reload` — reload configuration and active locale profile (`javachats.admin`)
-- `/msg <player> <message>` (aliases: `/tell`, `/w`) — send a private message (`javachats.msg`)
-- `/aihelper add <plus|minus> <message>` — add a training sample to `learning/` (`javachats.admin`)
+| Command | Action | Permission |
+| --- | --- | --- |
+| `/javachats reload` | Reload config and active locale | `javachats.admin` |
+| `/msg <player> <message>` (`/tell`, `/w`) | Send private message | `javachats.msg` |
+| `/aihelper add <plus\|minus> <message>` | Add AI training sample | `javachats.admin` |
+
+## Permissions
+
+| Permission | Purpose | Default |
+| --- | --- | --- |
+| `javachats.local.view` | Read local chat | all |
+| `javachats.local.send` | Write to local chat | all |
+| `javachats.global.view` | Read global chat | all |
+| `javachats.global.send` | Write to global chat | all |
+| `javachats.msg` | Use `/msg`, `/tell`, `/w` | all |
+| `javachats.ai.log` | View AI moderation alerts | op |
+| `javachats.admin` | Admin commands and reload | op |
 
 ## Configuration
 
-`LuckPerms` is optional (`paper-plugin.yml`, `required: false`). Set `locale: ru` or `locale: en` in the root `config.yml`, then run `/javachats reload`.
+Set `locale: ru` or `locale: en` in `plugins/JavaChats/config.yml`, then run `/javachats reload`.
 
-Locale profiles are stored in `temp/ru` and `temp/en`; each folder contains `config.yml`, `message.yml`, `AIHELPER.yml`, and `AIRULES.yml`. Active profile files are copied to the plugin data root on reload, so edit files inside `temp/{locale}`.
+Locale profiles live in `locate/ru` and `locate/en` (`config.yml`, `message.yml`, `AIHELPER.yml`, `AIRULES.yml`). Active profile files are loaded per locale; keep AI API keys only in server-local config.
 
-The public API and Folia architecture are documented in [docs/api.md](docs/api.md) and [docs/architecture.md](docs/architecture.md).
+## Documentation
 
-Do not commit API keys to configuration. Keep keys in your server-local config and rotate any exposed key.
+- [Public API](docs/api.md)
+- [Architecture](docs/architecture.md)
+
+[Русская документация](READMERU.md)
